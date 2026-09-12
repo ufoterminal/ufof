@@ -50,3 +50,11 @@ test('a map reports how far the scan has reached',()=>{
  assert.equal(none.status,'empty');
  assert.ok(none.error);
 });
+
+test('map building stands aside while a market sync is running',async()=>{
+ const {setHolderMapPaused,requestHolderMap,drainHolderMaps}=await import('../src/holder-map.js');
+ setHolderMapPaused(true);
+ requestHolderMap(A);
+ assert.equal(await drainHolderMaps(),null,'a queued token waits rather than competing for the same endpoints');
+ setHolderMapPaused(false);
+});

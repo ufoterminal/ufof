@@ -36,7 +36,10 @@ const v4Swap=parseAbiItem('event Swap(bytes32 indexed id,address indexed sender,
 const erc20=parseAbi(['function name() view returns (string)','function symbol() view returns (string)','function decimals() view returns (uint8)','function totalSupply() view returns (uint256)','function balanceOf(address) view returns (uint256)']);
 
 let client;
-const rpc=()=>client??=createPublicClient({transport:fallback(RPC_HTTP.map(url=>http(url,{batch:false,timeout:20000,retryCount:1})))});
+// Ranked so the quickest endpoint leads; they differ enough in latency for it to matter over a backfill.
+const rpc=()=>client??=createPublicClient({transport:fallback(
+ RPC_HTTP.map(url=>http(url,{batch:false,timeout:20000,retryCount:1})),
+ {rank:{interval:60000,sampleCount:3,timeout:2000}})});
 
 let ready;
 const init=()=>ready??=q(`

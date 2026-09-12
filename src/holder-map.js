@@ -19,12 +19,18 @@ const WINDOW=10000;
 // them together is what makes a map arrive in seconds rather than minutes; the ceiling keeps the public
 // RPC from being hammered by a single turn.
 const PASS=Math.max(1,Math.min(2000,Number(process.env.HOLDER_MAP_PASS||400)));
-const CONCURRENCY=Math.max(1,Math.min(16,Number(process.env.HOLDER_MAP_CONCURRENCY||8)));
+const CONCURRENCY=Math.max(1,Math.min(32,Number(process.env.HOLDER_MAP_CONCURRENCY||16)));
 const HOLDERS=100;
 const REFRESH=6*3600;
 
 let client;
-const rpc=()=>client??=createPublicClient({transport:fallback(RPC_HTTP.map(url=>http(url,{batch:false,timeout:20000,retryCount:1})))});
+// The endpoints differ by more than three times in latency for the same call, and the plain fallback
+// order would keep using the first one that answers rather than the one that answers fastest. Ranking
+// measures them and puts the quickest in front, which is what turns a full history scan from minutes
+// into seconds.
+const rpc=()=>client??=createPublicClient({transport:fallback(
+ RPC_HTTP.map(url=>http(url,{batch:false,timeout:20000,retryCount:1})),
+ {rank:{interval:60000,sampleCount:3,timeout:2000}})});
 
 let ready;
 const init=()=>ready??=q(`
@@ -192,6 +198,10 @@ export function shapeMap(row){
 // Tokens whose map a reader has asked for. One is built at a time, oldest request first, so a page view
 // never blocks on a scan and the RPC is not asked for several histories at once.
 const wanted=[];
+// Map building and the market sync draw on the same endpoints, and a queue of sixteen parallel window
+// reads will starve a sync that is still fetching the token list. Maps wait for the sync to finish.
+let paused=true;
+export function setHolderMapPaused(value){paused=!!value;}
 export function requestHolderMap(token){
  const address=String(token||'').toLowerCase();
  if(!/^0x[0-9a-f]{40}$/.test(address))return;
@@ -201,6 +211,7 @@ export function requestHolderMap(token){
  if(at!==0)wanted.unshift(address);
 }
 export async function drainHolderMaps(){
+ if(paused)return null;
  const address=wanted[0];
  if(!address)return null;
  try{

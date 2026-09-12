@@ -9,7 +9,7 @@ import {snapshotStatus} from './snapshots.js';
 import {onchainStatus} from './onchain.js';
 import {tokenHolders} from './holders.js';
 import {poolAddresses,V4_POOL_MANAGER} from './onchain.js';
-import {holderMap,requestHolderMap} from './holder-map.js';
+import {holderMap,requestHolderMap,setHolderMapPaused} from './holder-map.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
 let status={syncing:false,lastSync:null,lastError:null,sources:[]};
@@ -49,10 +49,10 @@ await init();
 const stopWorker=process.env.INDEXER_MODE==='external'?()=>{}:startWorker();
 const server=app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('[http] Listening on '+(process.env.PORT||3000)));
 async function sync(){
- if(status.syncing)return;status.syncing=true;
+ if(status.syncing)return;status.syncing=true;setHolderMapPaused(true);
  try{status.sources=await syncExternal();status.lastSync=Math.floor(Date.now()/1000);status.lastError=status.sources.filter(s=>!s.ok).map(s=>s.id+': '+s.error).join('; ')||null;invalidateMarkets();}
  catch(e){status.lastError=e.message;console.error('[sync]',e.message);}
- finally{status.syncing=false;}
+ finally{status.syncing=false;setHolderMapPaused(false);}
 }
 let stopped=false;
 async function loop(){await sync();if(!stopped)setTimeout(loop,60000).unref();}
