@@ -16,7 +16,7 @@ function star(a){return '<button class="star '+(watch.includes(a)?'saved':'')+'"
 function listShell(){
  app.innerHTML='<section class="hero"><div><div class="eyebrow">ARC NETWORK / MARKET EXPLORER</div><h1>Your view of Arc.</h1><p>Discover tokens. Follow the market. All in one place.</p></div><div class="stats"><div><small>ACTIVE MARKETS</small><strong id="stat-active">—</strong></div><div><small>24H VOLUME</small><strong id="stat-volume">—</strong></div><div><small>LIQUIDITY</small><strong id="stat-liquidity">—</strong></div><div><small>24H TXNS</small><strong id="stat-transactions">—</strong></div></div></section>'+
  '<div class="tape"><div class="tape-label">↗ MOST ACTIVE</div><div id="tape-items" class="tape-items"><span class="muted">Connecting to markets…</span></div></div><div id="list-banner" class="banner"></div>'+
- '<div class="workspace"><section class="market-main"><div class="toolbar"><div class="modes">'+[['active','Trending'],['new','New tokens'],['gainers','Gainers'],['losers','Losers'],['watch','☆ Watchlist'],['all','Archive']].map(([id,label])=>'<button data-mode="'+id+'" class="'+(state.mode===id?'active':'')+'">'+label+'</button>').join('')+'</div><div class="refresh-area"><span class="pill">24H</span><span class="synced" id="synced">Connecting</span><button id="refresh" class="icon-btn" aria-label="Refresh markets">↻</button></div></div>'+
+ '<div class="workspace"><section class="market-main"><div class="toolbar"><div class="modes">'+[['active','Trending'],['new','New tokens'],['gainers','Gainers'],['losers','Losers'],['watch','☆ Watchlist']].map(([id,label])=>'<button data-mode="'+id+'" class="'+(state.mode===id?'active':'')+'">'+label+'</button>').join('')+'</div><div class="refresh-area"><span class="pill">24H</span><span class="synced" id="synced">Connecting</span><button id="refresh" class="icon-btn" aria-label="Refresh markets">↻</button></div></div>'+
  '<div class="filters"><select id="source-filter" aria-label="Launchpad"><option value="">All sources</option>'+Object.entries(SOURCES).map(([id,s])=>'<option value="'+id+'">'+s.label+'</option>').join('')+'</select><select id="version-filter" aria-label="Pool version"><option value="">All versions</option><option value="v2">V2</option><option value="v3">V3</option><option value="v4">V4</option></select><select id="venue-filter" aria-label="DEX"><option value="">All DEXes</option>'+Object.entries(VENUES).map(([id,label])=>'<option value="'+id+'">'+label+'</option>').join('')+'</select><label>MIN LIQ<input id="min-liquidity" type="number" min="0" placeholder="$0"></label><label>MIN VOL<input id="min-volume" type="number" min="0" placeholder="$0"></label><button id="clear-filters" class="muted">Reset</button></div>'+ 
  '<div class="table-scroll"><table class="market-table"><thead><tr><th></th><th> TOKEN</th><th>TREND</th>'+[['marketCap','MCAP'],['price','PRICE'],['createdAt','TOKEN AGE'],['volume','VOLUME ↓'],['transactions','TXNS']].map(([key,label])=>'<th data-sort="'+key+'">'+label+'</th>').join('')+'<th>TRADERS</th><th data-sort="holders">HOLDERS</th><th>5M</th><th>1H</th><th>6H</th><th data-sort="change">24H</th><th data-sort="liquidity">LIQUIDITY</th></tr></thead><tbody id="market-rows">'+Array.from({length:8},()=>'<tr><td></td><td><div class="skeleton"></div></td><td colspan="13"><div class="skeleton"></div></td></tr>').join('')+'</tbody></table></div>'+
  '<footer class="footer"><span id="result-count">Loading markets…</span><div class="pagination"><button id="page-prev" aria-label="Previous page">‹</button><span id="page-label">1 / 1</span><button id="page-next" aria-label="Next page">›</button></div></footer></section>'+
@@ -44,7 +44,7 @@ function paintList(){
  for(const [id,format] of [['active',count],['volume',usd],['liquidity',usd],['transactions',count]])$('stat-'+id).textContent=format(d.stats[id]);
  document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===state.mode));
  $('market-rows').innerHTML=d.rows.map(t=>'<tr data-token="'+esc(t.address)+'"><td>'+star(t.address)+'</td><td><a class="token-cell" href="/token/'+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><span class="source-badge">'+esc(sourceName(t.source))+'</span><span class="description">'+esc(t.name||short(t.address))+'</span></span></a></td><td>'+spark(t.spark,t.changes['24h'])+'</td><td>'+usd(t.marketCap)+'</td><td>'+price(t.price)+'</td><td title="'+esc(date(t.createdAt))+'">'+age(t.createdAt)+'</td><td>'+usd(t.volume)+'</td><td>'+count(t.transactions)+'</td><td>'+count(t.traders)+'</td><td>'+count(t.holders)+'</td>'+['5m','1h','6h','24h'].map(w=>'<td class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</td>').join('')+'<td>'+usd(t.liquidity)+'</td></tr>').join('')||'<tr><td colspan="15" class="empty">'+(state.mode==='watch'?'Your watchlist is empty. Tap ☆ beside any token.':'No markets match these filters.')+'</td></tr>';
- $('result-count').textContent=count(d.total)+' '+(state.mode==='all'?'archived & active tokens':'markets')+' · source coverage totals';
+ $('result-count').textContent=count(d.total)+' tokens · source coverage totals';
  $('page-label').textContent=d.page+' / '+d.pages;$('page-prev').disabled=d.page<=1;$('page-next').disabled=d.page>=d.pages;
  $('synced').textContent=d.updatedAt?'Updated '+age(d.updatedAt)+' ago':'Syncing…';
  $('tape-items').innerHTML=d.trending.map((t,i)=>'<a class="tape-item" href="/token/'+esc(t.address)+'"><span class="muted">#'+(i+1)+'</span><b>'+esc(t.symbol)+'</b><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span></a>').join('');
@@ -67,7 +67,7 @@ document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA'].in
 document.addEventListener('click',e=>{if(!e.target.closest('.searchbox'))$('search-results').hidden=true;});
 let chart,candleSeries,lineSeries,volumeSeries,chartTokenTf=null;
 function detailShell(){
- app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart scale"><button data-scale="price" class="'+(scaleMode==='price'?'active':'')+'">Price</button><button data-scale="mc" class="'+(scaleMode==='mc'?'active':'')+'">MC</button></div><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><button class="panel-tab" data-panel="same">SAME TICKER</button><span id="trade-count"></span><span style="margin-left:auto" id="panel-note">Most recent · source feed</span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th></tr></thead><tbody id="holders"><tr><td colspan="4" class="empty">Loading holders…</td></tr></tbody></table><table class="trades-table" id="same-table" hidden><thead><tr><th>TOKEN</th><th>SOURCE</th><th>PRICE</th><th>MCAP</th><th>VOLUME</th><th>AGE</th></tr></thead><tbody id="same"><tr><td colspan="6" class="empty">Looking for tokens with this ticker…</td></tr></tbody></table></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
+ app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart scale"><button data-scale="price" class="'+(scaleMode==='price'?'active':'')+'">Price</button><button data-scale="mc" class="'+(scaleMode==='mc'?'active':'')+'">MC</button></div><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><button class="panel-tab" data-panel="same">SAME TICKER</button><button class="panel-tab" data-panel="map">HOLDER MAP</button><span id="trade-count"></span><span style="margin-left:auto" id="panel-note">Most recent · source feed</span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th></tr></thead><tbody id="holders"><tr><td colspan="4" class="empty">Loading holders…</td></tr></tbody></table><table class="trades-table" id="same-table" hidden><thead><tr><th>TOKEN</th><th>SOURCE</th><th>PRICE</th><th>MCAP</th><th>VOLUME</th><th>AGE</th></tr></thead><tbody id="same"><tr><td colspan="6" class="empty">Looking for tokens with this ticker…</td></tr></tbody></table><div id="map-panel" hidden><div class="map-note" id="map-status">Reading the transfer history…</div><div class="map-layout"><div class="map-canvas" id="map-canvas"></div><div class="map-clusters" id="map-clusters"></div></div></div></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
  app.addEventListener('click',e=>{const b=e.target.closest('[data-tf]');if(b){tf=b.dataset.tf;history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);document.querySelectorAll('[data-tf]').forEach(x=>x.classList.toggle('active',x===b));loadDetail();}const v=e.target.closest('[data-view]');if(v){viewMode=v.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===v));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}const sc=e.target.closest('[data-scale]');if(sc){scaleMode=sc.dataset.scale;document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x===sc));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode+'&scale='+scaleMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}
   if(e.target.closest('#fit-chart'))chart?.timeScale().fitContent();const copy=e.target.closest('[data-copy]');if(copy)navigator.clipboard.writeText(copy.dataset.copy).then(()=>toast('Address copied')).catch(()=>toast('Copy not available'));const s=e.target.closest('[data-star]');if(s){saveWatch(s.dataset.star);if(currentDetail)paintDetail(currentDetail);}});
 }
@@ -92,7 +92,7 @@ function chartScale(t){
 
 function paintDetail(d){
  const t=d.market;document.title=(t.symbol||'Token')+' · UFO Screener';
- $('token-heading').innerHTML='<a class="back" href="/" aria-label="Back to markets">←</a>'+icon(t)+'<div><h1>'+esc(t.symbol)+'</h1><span class="muted">'+esc(t.name)+'</span></div><span class="source-badge">'+esc(sourceName(t.source))+'</span><strong class="head-price">'+price(t.price)+'</strong><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span><div class="contract">'+star(t.address)+'<span>'+esc(short(t.address))+'</span><button class="icon-btn" data-copy="'+esc(t.address)+'" aria-label="Copy contract address">⧉</button></div>';
+ $('token-heading').innerHTML='<a class="back" href="/" aria-label="Back to markets">←</a>'+icon(t)+'<div><h1>'+esc(t.symbol)+(t.originalTicker?'<span class="og-tag" title="The oldest contract we have indexed under this ticker">OG</span>':'')+'</h1><span class="muted">'+esc(t.name)+'</span></div><span class="source-badge">'+esc(sourceName(t.source))+'</span><strong class="head-price">'+price(t.price)+'</strong><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span><div class="contract">'+star(t.address)+'<span>'+esc(short(t.address))+'</span><button class="icon-btn" data-copy="'+esc(t.address)+'" aria-label="Copy contract address">⧉</button></div>';
  $('detail-metrics').innerHTML='<h2 class="details-title">Market overview</h2><div class="metrics">'+[['Price',price(t.price)],['Market cap',usd(t.marketCap)],['Liquidity',usd(t.liquidity)],['24h volume',usd(t.volume)],['24h transactions',count(t.transactions)],['Holders',count(t.holders)],['Burned supply',valid(t.burned)?count(t.burned)+(valid(t.burnedPercent)?' \u00b7 '+Number(t.burnedPercent).toFixed(2)+'%':''):'\u2014']].map(([label,value])=>'<div class="metric"><small>'+label+'</small><b>'+value+'</b></div>').join('')+'</div><div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'+
  '<div class="buy-sell"><span class="up">Buys '+count(t.buys)+'</span><span class="down">Sells '+count(t.sells)+'</span></div>'+(valid(t.buys)&&valid(t.sells)&&t.buys+t.sells>0?'<div class="ratio"><span style="width:'+(t.buys/(t.buys+t.sells)*100)+'%"></span></div>':'')+
  '<div class="facts"><div><span>Launchpad</span><span>'+esc(sourceName(t.source))+'</span></div><div><span>Created</span><span title="'+esc(date(t.createdAt))+'">'+since(t.createdAt)+'</span></div><div><span>Last trade</span><span>'+since(t.lastTradeAt)+'</span></div><div><span>Pool</span><span>'+esc(short(t.pool))+'</span></div><div><span>Updated</span><span>'+since(t.updatedAt)+'</span></div></div><div class="socials">'+[['Website',t.website],['X',t.twitter],['Telegram',t.telegram]].filter(([,url])=>safeUrl(url)).map(([label,url])=>'<a href="'+esc(safeUrl(url))+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>').join('')+'</div><a class="all-link" href="https://arc-scan.org/address/'+esc(t.address)+'" target="_blank" rel="noopener">View on Arcscan ↗</a><p class="support-note">Source: '+esc(sourceName(t.source))+'. '+(t.stale?'The list snapshot is older than 3 minutes. ':'')+'Missing figures are not estimated.</p>';
@@ -124,11 +124,84 @@ function showPanel(name){
  panel=name;
  document.querySelectorAll('[data-panel]').forEach(b=>b.classList.toggle('active',b.dataset.panel===name));
  const trades=document.querySelector('.trades-table');
- trades.hidden=name!=='trades';$('holders-table').hidden=name!=='holders';$('same-table').hidden=name!=='same';
+ trades.hidden=name!=='trades';$('holders-table').hidden=name!=='holders';$('same-table').hidden=name!=='same';$('map-panel').hidden=name!=='map';
  $('trade-count').textContent=name==='trades'?(currentDetail?currentDetail.trades.length+' trades':''):'';
- $('panel-note').textContent=name==='trades'?'Most recent \u00b7 source feed':name==='holders'?'Largest first':'Same symbol, different contracts';
+ $('panel-note').textContent=name==='trades'?'Most recent \u00b7 source feed':name==='holders'?'Largest first':name==='same'?'Same symbol, different contracts':'Links are token transfers between mapped wallets';
+ if(name!=='map')stopMap();
  if(name==='holders')loadHolders();
  if(name==='same')loadSame();
+ if(name==='map')loadMap();
+}
+
+// Holder Maps. Each bubble is one of the token's hundred largest holders, sized by its share. A line means
+// those two wallets have moved this token between them, which is the only claim the picture makes.
+let mapTimer=null,mapController;
+function stopMap(){if(mapTimer){clearTimeout(mapTimer);mapTimer=null;}}
+async function loadMap(){
+ if(!currentDetail)return;
+ stopMap();mapController?.abort();mapController=new AbortController();
+ try{
+  const d=await api('/api/holder-map/'+encodeURIComponent(address),mapController);
+  if(panel!=='map')return;
+  if(d.status==='empty'){$('map-status').textContent=d.error||'No holder list available for this token.';$('map-canvas').innerHTML='';$('map-clusters').innerHTML='';return;}
+  if(d.status==='unknown'||d.status==='building'){
+   const pct=Math.round((d.progress||0)*100);
+   $('map-status').textContent='Reading this token\u2019s transfer history\u2026 '+pct+'% of its blocks scanned. The map fills in as it goes.';
+   mapTimer=setTimeout(()=>{if(panel==='map')loadMap();},6000);
+  }else{
+   $('map-status').textContent='Top '+d.holders.length+' holders. A line means these wallets have sent this token to each other. That is a pattern to look at, not proof of one owner: an exchange or a router leaves the same trace.';
+  }
+  drawMap(d);
+ }catch(e){
+  if(e.name==='AbortError')return;
+  $('map-status').textContent='Holder map unavailable right now.';
+ }
+}
+
+// A small force layout: linked wallets pull together, everything pushes apart, the frame keeps them in.
+function layout(nodes,edges,width,height){
+ const index=new Map(nodes.map((n,i)=>[n.id,i]));
+ nodes.forEach((n,i)=>{const a=i*2.399963;const r=Math.min(width,height)*.36*Math.sqrt(i/Math.max(1,nodes.length));
+  n.x=width/2+Math.cos(a)*r;n.y=height/2+Math.sin(a)*r;n.vx=0;n.vy=0;});
+ for(let step=0;step<220;step++){
+  for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+   const a=nodes[i],b=nodes[j];let dx=b.x-a.x,dy=b.y-a.y;let d=Math.hypot(dx,dy)||.01;
+   const want=a.r+b.r+10,push=(d<want?(want-d)*.5:0)+320/(d*d);
+   dx/=d;dy/=d;a.vx-=dx*push;a.vy-=dy*push;b.vx+=dx*push;b.vy+=dy*push;
+  }
+  for(const e of edges){
+   const a=nodes[index.get(e.from)],b=nodes[index.get(e.to)];
+   if(!a||!b)continue;
+   const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||.01,pull=(d-(a.r+b.r+34))*.03;
+   a.vx+=dx/d*pull;a.vy+=dy/d*pull;b.vx-=dx/d*pull;b.vy-=dy/d*pull;
+  }
+  for(const n of nodes){
+   n.vx+=(width/2-n.x)*.004;n.vy+=(height/2-n.y)*.004;
+   n.x+=n.vx*.5;n.y+=n.vy*.5;n.vx*=.82;n.vy*=.82;
+   n.x=Math.max(n.r+2,Math.min(width-n.r-2,n.x));n.y=Math.max(n.r+2,Math.min(height-n.r-2,n.y));
+  }
+ }
+ return nodes;
+}
+
+const CLUSTER_COLOURS=['#39dbaa','#7caaff','#d98cf0','#f0b357','#6fd2e8','#ef7f8d','#9ee87a','#c0a3ff'];
+
+function drawMap(d){
+ const width=760,height=420;
+ const cluster=new Map();
+ d.clusters.forEach((c,i)=>c.members.forEach(m=>cluster.set(m,i)));
+ const max=Math.max(...d.holders.map(h=>Number(h.share)||0),.0001);
+ const nodes=d.holders.map(h=>({id:h.address,share:Number(h.share)||0,label:h.label,contract:h.contract,
+  r:6+Math.sqrt((Number(h.share)||0)/max)*26,group:cluster.has(h.address)?cluster.get(h.address):null}));
+ layout(nodes,d.edges,width,height);
+ const at=new Map(nodes.map(n=>[n.id,n]));
+ const lines=d.edges.map(e=>{const a=at.get(e.from),b=at.get(e.to);return a&&b?'<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="#3d5b86" stroke-width="'+Math.min(3,1+Math.log10(e.count||1))+'"/>':'';}).join('');
+ const bubbles=nodes.map(n=>{
+  const colour=n.group==null?(n.contract?'#41536d':'#43608c'):CLUSTER_COLOURS[n.group%CLUSTER_COLOURS.length];
+  return '<a href="https://arc-scan.org/address/'+esc(n.id)+'" target="_blank" rel="noopener"><circle cx="'+n.x.toFixed(1)+'" cy="'+n.y.toFixed(1)+'" r="'+n.r.toFixed(1)+'" fill="'+colour+'" fill-opacity="'+(n.group==null?.45:.75)+'" stroke="'+colour+'"><title>'+esc(short(n.id))+(n.label?' \u00b7 '+esc(n.label):'')+(n.contract?' \u00b7 contract':'')+' \u00b7 '+n.share.toFixed(2)+'%</title></circle></a>';
+ }).join('');
+ $('map-canvas').innerHTML='<svg viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Holder map">'+lines+bubbles+'</svg>';
+ $('map-clusters').innerHTML='<h3>Clusters</h3>'+(d.clusters.length?d.clusters.map((c,i)=>'<div class="cluster"><div class="cluster-head"><span class="cluster-dot" style="background:'+CLUSTER_COLOURS[i%CLUSTER_COLOURS.length]+'"></span><b>Cluster '+(i+1)+'</b><span class="muted">'+c.members.length+' wallets</span><span class="cluster-share">'+c.share.toFixed(2)+'%</span></div>'+c.members.map(m=>'<a class="cluster-wallet" href="https://arc-scan.org/address/'+esc(m)+'" target="_blank" rel="noopener">'+esc(short(m))+' \u2197</a>').join('')+'</div>').join(''):'<p class="side-note">No two of these wallets have moved this token between them.</p>');
 }
 
 // Tokens trading under the same ticker. A symbol is not unique on chain, so the list is there to let the
@@ -141,13 +214,17 @@ async function loadSame(){
  sameFor=address;sameController?.abort();sameController=new AbortController();
  try{
   const d=await api('/api/markets?mode=all&limit=100&q='+encodeURIComponent(symbol),sameController);
-  const rows=d.rows.filter(r=>String(r.symbol||'').toLowerCase()===symbol.toLowerCase()&&r.address!==address);
+  const matching=d.rows.filter(r=>String(r.symbol||'').toLowerCase()===symbol.toLowerCase());
+  const dated=matching.filter(r=>valid(r.createdAt)).sort((a,b)=>a.createdAt-b.createdAt);
+  // Only an outright oldest earns the mark; a shared earliest date leaves it off.
+  const oldest=dated.length&&!(dated[1]&&dated[1].createdAt===dated[0].createdAt)?dated[0].address:null;
+  const rows=matching.filter(r=>r.address!==address);
   if(panel==='same')$('trade-count').textContent=rows.length?count(rows.length)+' other'+(rows.length===1?'':'s'):'';
   if(!rows.length){
    sameFor=null;
    $('same').innerHTML='<tr><td colspan="6" class="empty">No other token is trading under this ticker.</td></tr>';return;
   }
-  $('same').innerHTML=rows.map(r=>'<tr class="same-row"><td><a class="token-cell" href="/token/'+esc(r.address)+'">'+icon(r)+'<span><strong>'+esc(r.symbol||'?')+'</strong><small class="muted">'+esc(short(r.address))+'</small></span></a></td><td class="muted">'+esc(sourceName(r.source))+'</td><td>'+price(r.price)+'</td><td>'+usd(r.marketCap)+'</td><td>'+usd(r.volume)+'</td><td>'+age(r.createdAt)+'</td></tr>').join('');
+  $('same').innerHTML=rows.map(r=>'<tr class="same-row"><td><a class="token-cell" href="/token/'+esc(r.address)+'">'+icon(r)+'<span><strong>'+esc(r.symbol||'?')+(r.address===oldest?'<span class="og-tag" title="The oldest contract we have indexed under this ticker">OG</span>':'')+'</strong><small class="muted">'+esc(short(r.address))+'</small></span></a></td><td class="muted">'+esc(sourceName(r.source))+'</td><td>'+price(r.price)+'</td><td>'+usd(r.marketCap)+'</td><td>'+usd(r.volume)+'</td><td>'+age(r.createdAt)+'</td></tr>').join('');
  }catch(e){
   if(e.name==='AbortError')return;
   sameFor=null;

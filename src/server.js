@@ -9,6 +9,7 @@ import {snapshotStatus} from './snapshots.js';
 import {onchainStatus} from './onchain.js';
 import {tokenHolders} from './holders.js';
 import {poolAddresses,V4_POOL_MANAGER} from './onchain.js';
+import {holderMap,requestHolderMap} from './holder-map.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
 let status={syncing:false,lastSync:null,lastError:null,sources:[]};
@@ -22,6 +23,13 @@ app.get('/api/holders/:address',route(async(req,res)=>{
  const extra=String(req.query.pool||'').toLowerCase();
  if(/^0x[0-9a-f]{40}$/.test(extra))pools.push({address:extra,label:'Pool'});
  res.json(await tokenHolders(req.params.address,String(req.query.source||''),pools));
+}));
+app.get('/api/holder-map/:address',route(async(req,res)=>{
+ if(!/^0x[0-9a-f]{40}$/i.test(req.params.address))return res.status(400).json({error:'Invalid address'});
+ const map=await holderMap(req.params.address);
+ // Asking for a map that is missing or still filling puts it in the queue; the reply says where it is up to.
+ if(map.status!=='done')requestHolderMap(req.params.address);
+ res.json(map);
 }));
 app.get('/api/onchain',route(async(_,res)=>res.json(await onchainStatus())));
 app.get('/api/indexer',route(async(_,res)=>res.json(await snapshotStatus())));

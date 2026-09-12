@@ -1,13 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+process.env.DATA_DIR='memory://';
+delete process.env.DATABASE_URL;
 import {selectMarkets,mapMarket} from '../src/market-service.js';
 const now=1800000000;
 const token=(id,extra={})=>({address:'0x'+id.toString(16).padStart(40,'0'),symbol:'TOKEN'+id,name:'Token '+id,source:'tolly',marketData:true,volume:100,price:.001,marketCap:1000,createdAt:now-86400,updatedAt:now,liquidity:200,versions:['v3'],changes:{'24h':2},...extra});
-test('historical tokens remain searchable outside the active list',()=>{
+test('a token that has gone quiet stays in the list and in search',()=>{
  const all=[token(1),token(2,{volume:0,lastTradeAt:now-100000,symbol:'OLD'})];
- assert.equal(selectMarkets(all,{},now).total,1);
+ assert.equal(selectMarkets(all,{},now).total,2,'no archive to fall out of: the default list holds everything');
  assert.equal(selectMarkets(all,{q:'old'},now).rows[0].symbol,'OLD');
- assert.equal(selectMarkets(all,{mode:'all'},now).total,2);
+ const stats=selectMarkets(all,{},now).stats;
+ assert.equal(stats.active,1,'the header totals still count only what traded');
+ assert.equal(stats.archived,2,'against everything held');
+ assert.equal(selectMarkets(all,{},now).trending.every(r=>r.symbol!=='OLD'),true,'the most active tape stays active');
 });
 test('exact address and symbol rank before partial matches',()=>{
  const all=[token(1,{symbol:'ABCD',volume:1000}),token(2,{symbol:'ABC',volume:1})];
@@ -37,4 +42,23 @@ test('creation time comes from source, never discovery time',()=>{
  const created=1700000000;
  const t=mapMarket({address:token(1).address,creation_at:Math.floor(Date.now()/1000),metadata:{feed_schema:2,source:'tolly',token_created_at:created,price:0.00001}});
  assert.equal(t.createdAt,created);assert.equal(t.price,0.00001);assert.equal(t.marketData,true);
+});
+
+// The OG mark: the oldest contract under a ticker, and only when there is an outright oldest.
+test('only an outright earliest contract under a ticker is the original',async()=>{
+ const {isOriginalTicker}=await import('../src/market-service.js');
+ const {init,q}=await import('../src/db.js');
+ await init();
+ const at=1_780_000_000;
+ const rows=[['0x'+'1'.repeat(40),'OGT',at],['0x'+'2'.repeat(40),'OGT',at+500],['0x'+'3'.repeat(40),'TIE',at],['0x'+'4'.repeat(40),'TIE',at]];
+ for(const [address,symbol,created] of rows){
+  await q(`INSERT INTO tokens(address,name,symbol,decimals,metadata) VALUES($1,$2,$2,18,$3::jsonb)
+   ON CONFLICT(address) DO UPDATE SET symbol=excluded.symbol,metadata=excluded.metadata`,
+   [address,symbol,JSON.stringify({feed_schema:2,token_created_at:created})]);
+ }
+ assert.equal(await isOriginalTicker('0x'+'1'.repeat(40),'OGT'),true,'the earliest contract carries the mark');
+ assert.equal(await isOriginalTicker('0x'+'2'.repeat(40),'OGT'),false,'a later one does not');
+ assert.equal(await isOriginalTicker('0x'+'1'.repeat(40),'ogt'),true,'the ticker match ignores case');
+ assert.equal(await isOriginalTicker('0x'+'3'.repeat(40),'TIE'),false,'a shared earliest second is nobody\u2019s first');
+ assert.equal(await isOriginalTicker('0x'+'9'.repeat(40),''),false,'no symbol, no mark');
 });

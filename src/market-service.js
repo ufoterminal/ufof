@@ -39,7 +39,10 @@ export function selectMarkets(all,options={},now=Math.floor(Date.now()/1000)){
  const query=String(options.q||'').trim().toLowerCase().slice(0,100);
  const active=r=>r.marketData&&(r.volume>0||r.lastTradeAt>now-86400);
  const activeRows=all.filter(active);
- let rows=query||['all','watch'].includes(options.mode)?all.slice():activeRows.slice();
+ // Every token we hold is in the list, whether or not it traded today. A market that has gone quiet is
+ // still a market someone may be looking for, and sorting by volume already puts it where it belongs.
+ // The active set is kept only for the header totals and the most active tape.
+ let rows=all.slice();
  if(query)rows=rows.filter(r=>[r.address,r.symbol,r.name].some(v=>String(v).toLowerCase().includes(query)));
  if(options.source)rows=rows.filter(r=>r.source===options.source);
  if(options.version)rows=rows.filter(r=>r.versions.includes(options.version));
@@ -76,6 +79,22 @@ export async function listMarkets(options={}){
  }
  return selectMarkets(await allMarkets(),options);
 }
+// The first contract to carry a ticker. A symbol is not unique on chain, so being the oldest one is
+// worth saying, but it is only ever the oldest we know about: a token we have never indexed cannot be
+// compared. Ties and unknown creation dates leave the mark off rather than handing it to a guess.
+export async function isOriginalTicker(address,symbol){
+ const ticker=String(symbol||'').trim();
+ if(!ticker)return false;
+ const rows=await q(`SELECT address,(metadata->>'token_created_at')::bigint AS at FROM tokens
+  WHERE lower(symbol)=lower($1) AND (metadata->>'token_created_at') IS NOT NULL
+  ORDER BY at ASC,address ASC LIMIT 2`,[ticker]);
+ if(!rows.length)return false;
+ const first=rows[0];
+ if(first.address!==address.toLowerCase())return false;
+ // Two contracts claiming the same second is not a first.
+ return !(rows[1]&&Number(rows[1].at)===Number(first.at));
+}
+
 export async function buildMarket(address,tf='1h'){
  if(!/^0x[0-9a-f]{40}$/i.test(address))throw Error('Invalid token address');
  if(!['1m','5m','15m','1h','4h','1d'].includes(tf))throw Error('Invalid timeframe');
@@ -112,6 +131,7 @@ export async function buildMarket(address,tf='1h'){
   // less than showing nothing at all.
   if(burn&&burn.burned>=1){market.burned=burn.burned;market.burnedPercent=burn.percent;market.circulating=burn.circulating;}
  }catch{/* the panel simply omits it */}
+ try{market.originalTicker=await isOriginalTicker(market.address,market.symbol);}catch{/* the mark is simply absent */}
  const trades=remote?.trades||[];
  if(trades[0]?.at)market.lastTradeAt=validTime(trades[0].at)||market.lastTradeAt;
  // The visible price and chart close must refer to the same recorded stream.

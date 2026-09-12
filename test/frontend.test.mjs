@@ -64,3 +64,10 @@ test('the site is branded UFO Screener with an animated craft',()=>{
  assert.ok(css.includes('@keyframes ufo-hover'),'the craft moves');
  assert.ok(css.includes('prefers-reduced-motion'),'motion is dropped when the system asks for less');
 });
+
+test('the holder map has a tab, a canvas and a cluster list',()=>{
+ assert.ok(terminal.includes('data-panel="map"'),'the tab exists');
+ assert.ok(terminal.includes('id="map-canvas"')&&terminal.includes('id="map-clusters"'),'both halves are rendered');
+ assert.ok(terminal.includes('/api/holder-map/'),'it reads our own endpoint');
+ assert.ok(terminal.includes('not proof of one owner'),'the picture states what it does not prove');
+});

@@ -87,7 +87,7 @@ V2/V3/V4 filtreleri yalnızca kaynağın açıkça bildirdiği sürümü kullan�
 
 ## Ekranlar ve doğruluk
 
-- Trending (24 saat hacim sırası), son 7 günde oluşturulan tokenler, gainers/losers, yerel watchlist, arşiv, kaynak/sürüm/likidite/hacim filtreleri ve sayfalama.
+- Trending (24 saat hacim sırası), son 7 günde oluşturulan tokenler, gainers/losers, yerel watchlist, kaynak/sürüm/likidite/hacim filtreleri ve sayfalama.
 - Arama yalnızca ekrandaki sayfayı değil yerel tarihsel kataloğu da tarar. Tam adres ve tam sembol eşleşmesi önceliklidir. Henüz indekslenmemiş bir token bulunamayabilir.
 - Etkileşimli fiyat/hacim grafiği: 1m, 5m, 15m, 1h, 4h, 1d; gerçek son işlem kayıtları ve explorer bağlantıları.
 - AGE token oluşturulma zamanıdır; keşif/senkronizasyon zamanı değildir. Kaynak vermiyorsa — kalır. Pool yaşı olarak etiketlenmez.
@@ -96,6 +96,14 @@ V2/V3/V4 filtreleri yalnızca kaynağın açıkça bildirdiği sürümü kullan�
 - Sharc sanal rezervleri likidite sayılmaz; toplam işlem sayısı 24 saatlik işlem sayısı yerine konmaz.
 - Tutarsız OHLC varsa kapanış fiyatlarıyla çizgi grafik ve görünür uyarı sunulur; hayali mum üretilmez.
 - İstatistikler yalnızca bağlı kaynak kapsamıdır, tüm Arc toplamı değildir. Rakamlar kaynak API'lerinin bildirimidir; bağımsız on-chain denetim garantisi değildir.
+
+## OG etiketi
+
+Bir ticker altında indekslediğimiz en eski kontrat yeşil "OG" etiketiyle işaretlenir. Etiket hem tokenin kendi başlığında hem de SAME TICKER listesinde görünür. Kural katıdır: oluşturulma tarihi bilinmeyen token yarışa girmez, iki kontrat aynı saniyeyi paylaşıyorsa etiket kimseye verilmez. Etiket "zincirdeki ilk" değil "bizim bildiğimiz en eski" demektir, hiç indekslemediğimiz bir kontrat karşılaştırmaya giremez.
+
+## Tek liste
+
+Arşiv diye ayrı bir sekme yok. Elimizdeki her token ana listede, Trending altında görünür; son 24 saatte işlem görmemiş bir token da orada durur, hacme göre sıralandığı için zaten aşağıda kalır. Arama da aynı şekilde her şeyi kapsar, yeni çıkmış token da uzun süredir sessiz olan da çıkar. Üstteki ACTIVE MARKETS sayacı ve MOST ACTIVE şeridi yalnızca işlem görenleri sayar, çünkü onlar "şu an ne dönüyor" sorusunu yanıtlar.
 
 ## Marka
 
@@ -108,6 +116,16 @@ Grafiğin üstünde Price ve MC düğmeleri var. MC'ye basınca mumlar, çizgi, 
 ## Yakılan arz
 
 Market overview'da yakılan arz gösterilir. Zincirden okunur, besleme verisine güvenilmez: yakma adreslerinin (`0x...dead` ve sıfır adresi) bakiyeleri ve toplam arz aynı anda okunup miktar ve yüzde çıkarılır. ARGUS'ta 35,7 milyon ve %3,57 okundu. Okuma başarısız olursa alan bilinmiyor kalır, sıfır yazılmaz. Yakma adresinde bir tam tokenden az toz kalmışsa bu bir yakma sayılmaz ve gösterilmez, çünkü ekranda "0 · 0.00%" olarak görünür ve hiçbir şey anlatmaz.
+
+## Holder Maps
+
+Token detayında HOLDER MAP sekmesi var. En büyük 100 holder baloncuk olarak çizilir, boyut paylarıyla orantılıdır. İki baloncuk arasındaki çizgi şu anlama gelir: bu iki cüzdan birbirine bu tokenden göndermiş. Başka bir iddia taşımaz. Birbirine bağlı cüzdanlar küme olarak renklendirilir ve sağdaki listede üyeleriyle birlikte, toplam paylarıyla sıralanır.
+
+Veri tokenin kendi Transfer logundan gelir, kontratın doğduğu bloktan zincirin ucuna kadar, yine 10.000 bloklik pencerelerle. Eski bir token için bu birkaç dakika sürer, o yüzden arka planda tur tur işlenir ve ilerlemesi kaydedilir; sekme açıkken yüzde kaçının tarandığı yazar ve harita dolarken güncellenir. Bir kez tamamlandıktan sonra saklanır.
+
+Kümeleme yalnızca sade cüzdanlar üzerinden yapılır. Kodu olan adresler (havuzlar, router'lar) ve yakma adresleri haritada görünür ve payları sayılır ama kimse onların üzerinden gruplanmaz. Bu olmadan herkesin işlem yaptığı tek bir PoolManager bütün holderları anlamsız tek bir kümeye toplardı, ilk denemede tam olarak bu oldu. Düzeltince BARC'ta iki gerçek küme kaldı: iki cüzdan %4,39 ve üç cüzdan %3,64.
+
+Panel şunu açıkça yazar: bir küme bakılmaya değer bir örüntüdür, tek sahip kanıtı değildir. Borsa da router da arkadaş da aynı izi bırakır.
 
 ## Holders
 

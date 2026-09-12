@@ -59,26 +59,26 @@ export function labelPools(rows,pools=[]){
  return rows.map(h=>({...h,label:BURN_LABELS[h.address]||known.get(h.address)||h.label||null}));
 }
 
-export async function tokenHolders(address,source,pools=[]){
+export async function tokenHolders(address,source,pools=[],limit=50){
  const token=String(address||'').toLowerCase();
  if(!/^0x[0-9a-f]{40}$/.test(token))throw Error('Invalid token address');
  const errors={};
  try{
-  const found=fromExplorer(await cachedJson(EXPLORER+token+'/holders?limit=50',120000));
-  if(found)return {...found,holders:labelPools(found.holders.slice(0,50),pools)};
+  const found=fromExplorer(await cachedJson(EXPLORER+token+'/holders?limit='+limit,120000));
+  if(found)return {...found,holders:labelPools(found.holders.slice(0,limit),pools)};
   errors.explorer='no holders returned';
  }catch(e){errors.explorer=e.message;}
  const url=padHolders[source];
  if(url){
   try{
    const found=fromPad(await cachedJson(url(token),120000),source);
-   if(found)return {...found,holders:labelPools(found.holders.slice(0,50),pools),errors};
+   if(found)return {...found,holders:labelPools(found.holders.slice(0,limit),pools),errors};
    errors.source='no holders returned';
   }catch(e){errors.source=e.message;}
  }
  try{
   const found=fromPad(await cachedJson(generalHolders(token),120000),'radardex');
-  if(found)return {...found,holders:labelPools(found.holders.slice(0,50),pools),errors};
+  if(found)return {...found,holders:labelPools(found.holders.slice(0,limit),pools),errors};
   errors.general='no holders returned';
  }catch(e){errors.general=e.message;}
  return {holders:[],count:null,provider:null,errors};
