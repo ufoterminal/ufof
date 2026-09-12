@@ -1,6 +1,6 @@
 // Public, read-only endpoints verified against each pad's own frontend.
-import {argusRegistry,launchMeta} from './argus.js';
-import {PAD_REGISTRIES,scanPad,padLaunches} from './pad-registry.js';
+import {knownRegistry,launchMeta} from './argus.js';
+import {PAD_REGISTRIES,padLaunches} from './pad-registry.js';
 // How many unnamed launches are read from their contracts in one pass.
 const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||20)));
 export const feeds = {
@@ -46,7 +46,8 @@ export const number=x=>x==null||x===''||!Number.isFinite(Number(x))?null:Number(
 const unix=x=>{if(x==null||x==='')return null;const n=typeof x==='string'&&!/^\d+(?:\.\d+)?$/.test(x)?Date.parse(x):Number(x);return Number.isFinite(n)?Math.floor(n>1e12?n/1000:n):null};
 export async function ownList(id){
  if(PAD_REGISTRIES[id]){
-  const [,payload]=await Promise.all([scanPad(id).catch(()=>null),cachedJson(feeds[id],60000)]);
+  // The registry is filled by a background task; a sync only reads it.
+  const payload=await cachedJson(feeds[id],60000);
   if(!Array.isArray(payload.tokens))throw Error(PAD_REGISTRIES[id].label+' unexpected token list');
   const registry=await padLaunches(id);
   const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));
@@ -60,7 +61,7 @@ export async function ownList(id){
   return {...payload,registry:rows.map(r=>({...(meta.get(r.address)||{}),...r})),mirror:true};
  }
  if(id==='argus'){
-  const [registry,payload]=await Promise.all([argusRegistry(),cachedJson(feeds.argus,60000)]);
+  const [registry,payload]=[knownRegistry(),await cachedJson(feeds.argus,60000)];
   if(!Array.isArray(payload.tokens))throw Error('ArgusPad unexpected token list');
   // A launch the market feed has not picked up yet still belongs on the list: name it from the token contract.
   const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));

@@ -9,7 +9,7 @@
 // creation block was located by binary search over archive state, the transaction that created the token
 // named the factory, and the log in that block whose first topic held the new token's address named the
 // event.
-import {createPublicClient,fallback,http} from 'viem';
+import {createPublicClient,fallback,http,numberToHex} from 'viem';
 import {q} from './db.js';
 import {RPC_HTTP} from './config.js';
 
@@ -94,8 +94,11 @@ export async function scanPad(id,{head}={}){
   let reached=newest,lowest=oldest;
   for(let i=0;i<ranges.length;i+=CONCURRENCY){
    const batch=ranges.slice(i,i+CONCURRENCY);
-   const results=await Promise.all(batch.map(([a,b])=>rpc().getLogs({address:factory,
-    fromBlock:BigInt(a),toBlock:BigInt(b)}).catch(()=>null)));
+   // The filter is sent as a raw eth_getLogs call. Through the client helper the topic never reached the
+   // node, so every log of the factory came back: correct once filtered here, but heavy enough that a
+   // full history scan crawled. Filtered at the node it is a few records per window.
+   const results=await Promise.all(batch.map(([a,b])=>rpc().request({method:'eth_getLogs',
+    params:[{address:factory,topics:[pad.topic],fromBlock:numberToHex(a),toBlock:numberToHex(b)}]}).catch(()=>null)));
    for(let j=0;j<batch.length;j++){
     if(results[j]==null)continue;   // a window that failed is simply not marked as read
     found.push(...launchesFromLogs(results[j],id,factory,pad.topic));
@@ -125,6 +128,20 @@ async function saveLaunches(all){
    ON CONFLICT(pad,token) DO UPDATE SET block=LEAST(pad_launches.block,excluded.block),
     at=COALESCE(pad_launches.at,excluded.at)`,[JSON.stringify(rows.slice(i,i+250))]);
  }
+}
+
+// Registry scanning is chain work and does not belong in a market sync: on a deployment further from the
+// RPC endpoints it took longer than the sync's own deadline, so all three chain-backed pads were dropped
+// every round. The scan now runs as a background task and a sync only reads what has been found so far.
+let scanning=false;
+export async function scanPadsInBackground(){
+ if(scanning)return null;
+ scanning=true;
+ try{
+  const head=Number(await rpc().getBlockNumber());
+  for(const id of Object.keys(PAD_REGISTRIES))await scanPad(id,{head}).catch(()=>null);
+  return true;
+ }finally{scanning=false;}
 }
 
 export async function padLaunches(id){

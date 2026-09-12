@@ -11,7 +11,7 @@ npm ci
 npm start
 ```
 
-Yerelde varsayılan adres http://localhost:3000. Windows'ta BASLAT.cmd de kullanılabilir.
+Yerelde varsayılan adres http://localhost:3000.
 
 Railway mevcut Node servisini kullanır; start command `npm start`, sağlık kontrolü `/health`. Platformun PORT değişkenini değiştirmeyin. package.json repository kökünde bulunmalı (veya Railway Root Directory bu klasöre ayarlanmalı).
 
@@ -149,13 +149,16 @@ Panel şunu açıkça yazar: bir küme bakılmaya değer bir örüntüdür, tek 
 
 ## Senkron dayanıklılığı
 
+Zincir tarayan kayıtlar (ArgusPad Portalları, long ve o1 fabrikaları) senkronun içinde değil arka planda çalışır. Senkron yalnızca o ana kadar bulunmuş olanı okur. RPC uçlarına uzak bir kurulumda bu taramalar senkronun kendi süre sınırını aşıyordu ve üç pad de her turda düşüyordu.
+
+
 Her kaynak kendi süre sınırıyla çalışır (`SOURCE_TIMEOUT_MS`, varsayılan 90 sn). Zamanında cevap vermeyen kaynak o tur başarısız sayılır ve senkron kalanıyla devam eder. Öncesinde tek bir yavaş kaynak bütün turu rehin alıyordu, üretimde senkron hiç bitmiyor ve liste boş kalıyordu.
 
 Fabrika kaydında olup beslemede görünmeyen tokenlerin adı kontratlarından okunur. Bu okumalar eskiden tek tek yapılıyordu; long gibi yüzlerce launch'ı olan bir padde bu yüzlerce ardışık RPC çağrısı demekti ve tur dakikalarca sürüyordu. Artık tur başına sınırlı sayıda (`PAD_META_PER_PASS`, varsayılan 20) ve paralel okunur, kalanı sonraki turlarda adlandırılır. ArgusPad'in Portal indeksleri de aynı şekilde paralel okunur (`ARGUS_CONCURRENCY`).
 
 Holder haritaları senkron sürerken durmaz, kısılır (`HOLDER_MAP_SYNC_CONCURRENCY`, `HOLDER_MAP_SYNC_PASS`). Tamamen durdurmak, senkronu nadiren boş kalan bir kurulumda hiçbir haritanın kurulmaması demekti.
 
-Ölçüm: boş bir veritabanında ilk senkron 91 saniyede tamamlanıyor ve on dört kaynağın hepsi başarılı. Sonraki turlar sürerken en yoğun on tokenin haritası da kendiliğinden hazır hale geldi.
+Ölçüm: boş bir veritabanında ilk senkron 46 saniyede tamamlanıyor, on dört kaynağın hepsi başarılı, ve iki dakika içinde zincirden okunan üç pad de doluyor (long 181, ArgusPad 126, o1 37). Sonraki turlar sürerken en yoğun on tokenin haritası da kendiliğinden hazır hale geldi.
 
 ## Sistem yükü
 

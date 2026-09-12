@@ -22,7 +22,11 @@ const erc20Abi=parseAbi(['function name() view returns (string)','function symbo
 
 let client;
 // Arc refuses JSON-RPC batching (-32600), so every transport is created with batching off.
-const rpc=()=>client??=createPublicClient({transport:fallback(RPC_HTTP.map(url=>http(url,{batch:false,timeout:10000,retryCount:1})))});
+// Ranked like the other chain readers: these lookups sit inside a sync, and the endpoints differ enough in
+// latency that the unranked order was slow enough to miss the sync's deadline.
+const rpc=()=>client??=createPublicClient({transport:fallback(
+ RPC_HTTP.map(url=>http(url,{batch:false,timeout:8000,retryCount:0})),
+ {rank:{interval:60000,sampleCount:3,timeout:2000}})});
 
 export const chainReader={
  count:async portal=>Number(await rpc().readContract({address:portal,abi:portalAbi,functionName:'tokenCount'})),
@@ -74,6 +78,18 @@ export function registryEntries(){
  for(const portal of ARGUS_PORTALS)known.get(portal.address).forEach((address,index)=>out.push({address,portal:portal.address,index,line:portal.line}));
  return out;
 }
+
+// Filled in the background for the same reason as the other chain-backed pads.
+let scanning=false;
+export async function refreshRegistryInBackground(reader=chainReader){
+ if(scanning)return null;
+ scanning=true;
+ try{return await refreshRegistry(reader);}catch{return null;}finally{scanning=false;}
+}
+
+// Reads what has already been found. The first rounds after a cold start return little and fill in as the
+// background scan progresses, which is better than holding up every source behind one chain scan.
+export function knownRegistry(){return registryEntries();}
 
 export async function argusRegistry({ttl=60000,reader=chainReader}={}){
  if(checkedAt>Date.now()-ttl&&registryEntries().length)return registryEntries();

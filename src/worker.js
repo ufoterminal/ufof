@@ -2,6 +2,8 @@ import {init,q,pool} from './db.js';
 import {buildMarket} from './market-service.js';
 import {frames,requestSnapshot,claimJob,finishJob,publishSnapshot,initSnapshots} from './snapshots.js';
 import {drainHolderMaps,seedHolderMaps} from './holder-map.js';
+import {scanPadsInBackground} from './pad-registry.js';
+import {refreshRegistryInBackground} from './argus.js';
 let stopped=false;
 export async function seedJobs(){
  await initSnapshots();
@@ -32,6 +34,12 @@ export function startWorker(){
   try{worked=!!await drainHolderMaps();}catch(e){console.error('[holder-map]',e.message);}
   later(maps,worked?500:5000);
  }
+ // The chain-backed pad registries, kept out of the sync path.
+ async function registries(){
+  try{await scanPadsInBackground();await refreshRegistryInBackground();}catch(e){console.error('[registries]',e.message);}
+  later(registries,15000);
+ }
+ registries();
  maps();
  for(let i=0;i<Math.max(1,Math.min(4,Number(process.env.INDEXER_CONCURRENCY)||2));i++)run();
  seed();return ()=>{stopped=true;for(const timer of timers)clearTimeout(timer);};
