@@ -15,9 +15,11 @@ import {tokenHolders} from './holders.js';
 
 const transfer=parseAbiItem('event Transfer(address indexed from,address indexed to,uint256 value)');
 const WINDOW=10000;
-// Windows per pass. A pass is one background turn, so this trades how fast a map fills against how much
-// a single turn asks of the public RPC.
-const PASS=Math.max(1,Math.min(120,Number(process.env.HOLDER_MAP_PASS||40)));
+// Windows per pass, and how many of them are in flight at once. Requests are independent, so fetching
+// them together is what makes a map arrive in seconds rather than minutes; the ceiling keeps the public
+// RPC from being hammered by a single turn.
+const PASS=Math.max(1,Math.min(2000,Number(process.env.HOLDER_MAP_PASS||400)));
+const CONCURRENCY=Math.max(1,Math.min(16,Number(process.env.HOLDER_MAP_CONCURRENCY||8)));
 const HOLDERS=100;
 const REFRESH=6*3600;
 
@@ -34,12 +36,27 @@ CREATE TABLE IF NOT EXISTS holder_maps(
 // is stored so the search happens once per token.
 async function creationBlock(token,head){
  let lo=0,hi=head;
- while(lo<hi){
-  const mid=Math.floor((lo+hi)/2);
-  const code=await rpc().getBytecode({address:token,blockNumber:BigInt(mid)}).catch(()=>null);
-  if(code&&code!=='0x')hi=mid;else lo=mid+1;
+ // Several probes go out together and the range collapses to whichever gap holds the transition, so the
+ // search takes a handful of rounds instead of one round per halving.
+ while(hi-lo>1){
+  // Strictly inside the range and never repeated, otherwise a narrow range would probe its own edge
+  // forever instead of closing.
+  const cuts=[...new Set(Array.from({length:CONCURRENCY},(_,i)=>lo+Math.floor((hi-lo)*(i+1)/(CONCURRENCY+1))))]
+   .filter(b=>b>lo&&b<hi);
+  if(!cuts.length)cuts.push(lo+Math.floor((hi-lo)/2));
+  if(cuts[0]<=lo||cuts[0]>=hi)break;
+  const has=await Promise.all(cuts.map(b=>rpc().getBytecode({address:token,blockNumber:BigInt(b)})
+   .then(code=>!!(code&&code!=='0x')).catch(()=>null)));
+  let low=lo,high=hi,moved=false;
+  for(let i=0;i<cuts.length;i++){
+   if(has[i]===null)continue;
+   if(has[i]){high=cuts[i];moved=true;break;}
+   low=cuts[i];moved=true;
+  }
+  if(!moved)break;
+  lo=low;hi=high;
  }
- return lo;
+ return hi;
 }
 
 // Pools, routers and burn addresses trade with everybody, so linking through them would put every holder
@@ -51,10 +68,11 @@ const addressSet=holders=>new Set(holders.filter(isWallet).map(h=>h.address));
 // One code read per holder, done once when the map is first built.
 async function markContracts(holders){
  const out=[];
- for(const h of holders){
-  if(h.contract!=null){out.push(h);continue;}
-  const code=await rpc().getBytecode({address:h.address}).catch(()=>null);
-  out.push({...h,contract:!!(code&&code!=='0x')});
+ for(let i=0;i<holders.length;i+=CONCURRENCY){
+  const batch=holders.slice(i,i+CONCURRENCY);
+  const codes=await Promise.all(batch.map(h=>h.contract!=null?Promise.resolve(null)
+   :rpc().getBytecode({address:h.address}).catch(()=>null)));
+  batch.forEach((h,j)=>out.push(h.contract!=null?h:{...h,contract:!!(codes[j]&&codes[j]!=='0x')}));
  }
  return out;
 }
@@ -131,15 +149,27 @@ export async function advanceHolderMap(token){
  const edges={...(row.edges||{})};
  let from=Number(row.scanned_to)+1;
  const target=Number(row.head)||head;
- for(let i=0;i<PASS&&from<=target;i++){
-  const to=Math.min(target,from+WINDOW-1);
-  const logs=await rpc().getLogs({address,event:transfer,fromBlock:BigInt(from),toBlock:BigInt(to)});
-  await scanWindow(logs,members,edges);
-  from=to+1;
+ // The windows of this pass, fetched a batch at a time. A window that fails leaves the scan short of the
+ // head rather than claiming ground it never read, so the next pass picks it up.
+ const ranges=[];
+ for(let i=0;i<PASS&&from<=target;i++){const to=Math.min(target,from+WINDOW-1);ranges.push([from,to]);from=to+1;}
+ let reached=Number(row.scanned_to);
+ for(let i=0;i<ranges.length;i+=CONCURRENCY){
+  const batch=ranges.slice(i,i+CONCURRENCY);
+  const results=await Promise.all(batch.map(([a,b])=>
+   rpc().getLogs({address,event:transfer,fromBlock:BigInt(a),toBlock:BigInt(b)}).then(logs=>logs).catch(()=>null)));
+  let ok=true;
+  for(let j=0;j<batch.length;j++){
+   if(results[j]==null){ok=false;break;}
+   await scanWindow(results[j],members,edges);
+   reached=batch[j][1];
+  }
+  if(!ok)break;
  }
+ from=reached+1;
  const done=from>target;
  await q(`UPDATE holder_maps SET edges=$2::jsonb,scanned_to=$3,status=$4,built_at=$5 WHERE token=$1`,
-  [address,JSON.stringify(edges),from-1,done?'done':'building',done?Math.floor(Date.now()/1000):null]);
+  [address,JSON.stringify(edges),reached,done?'done':'building',done?Math.floor(Date.now()/1000):null]);
  return readRow(address);
 }
 
@@ -164,7 +194,11 @@ export function shapeMap(row){
 const wanted=[];
 export function requestHolderMap(token){
  const address=String(token||'').toLowerCase();
- if(/^0x[0-9a-f]{40}$/.test(address)&&!wanted.includes(address))wanted.push(address);
+ if(!/^0x[0-9a-f]{40}$/.test(address))return;
+ // A reader waiting on a tab comes before whatever the seed queued.
+ const at=wanted.indexOf(address);
+ if(at>0)wanted.splice(at,1);
+ if(at!==0)wanted.unshift(address);
 }
 export async function drainHolderMaps(){
  const address=wanted[0];
@@ -174,6 +208,22 @@ export async function drainHolderMaps(){
   if(row?.status!=='building')wanted.shift();
   return row;
  }catch(e){wanted.shift();throw e;}
+}
+
+// Maps are built before anyone asks, busiest tokens first, so opening the tab on a token people actually
+// trade shows a finished map rather than a progress line. A reader's own request still jumps the queue.
+const SEED=Math.max(0,Math.min(500,Number(process.env.HOLDER_MAP_SEED||80)));
+export async function seedHolderMaps(){
+ await init();
+ if(!SEED)return 0;
+ const rows=await q(`SELECT t.address FROM tokens t
+  LEFT JOIN holder_maps m ON m.token=t.address
+  WHERE COALESCE((t.metadata->>'volume24h')::numeric,0)>0
+  AND (m.token IS NULL OR (m.status='done' AND COALESCE(m.built_at,0)<$1) OR m.status='building')
+  ORDER BY COALESCE((t.metadata->>'volume24h')::numeric,0) DESC LIMIT $2`,
+  [Math.floor(Date.now()/1000)-REFRESH,SEED]);
+ for(const r of rows)if(!wanted.includes(r.address))wanted.push(r.address);
+ return rows.length;
 }
 
 export async function holderMap(token){

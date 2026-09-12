@@ -1,7 +1,7 @@
 import {init,q,pool} from './db.js';
 import {buildMarket} from './market-service.js';
 import {frames,requestSnapshot,claimJob,finishJob,publishSnapshot,initSnapshots} from './snapshots.js';
-import {drainHolderMaps} from './holder-map.js';
+import {drainHolderMaps,seedHolderMaps} from './holder-map.js';
 let stopped=false;
 export async function seedJobs(){
  await initSnapshots();
@@ -25,7 +25,7 @@ export function startWorker(){
   catch(e){console.error('[worker]',e.message);}
   later(run,job?100:1000);
  }
- async function seed(){try{await seedJobs();}catch(e){console.error('[seed]',e.message);}later(seed,60000);}
+ async function seed(){try{await seedJobs();await seedHolderMaps();}catch(e){console.error('[seed]',e.message);}later(seed,60000);}
  // Holder maps are filled a few windows at a time between snapshot jobs.
  async function maps(){
   let worked=false;

@@ -101,6 +101,10 @@ V2/V3/V4 filtreleri yalnızca kaynağın açıkça bildirdiği sürümü kullan�
 
 Bir ticker altında indekslediğimiz en eski kontrat yeşil "OG" etiketiyle işaretlenir. Etiket hem tokenin kendi başlığında hem de SAME TICKER listesinde görünür. Kural katıdır: oluşturulma tarihi bilinmeyen token yarışa girmez, iki kontrat aynı saniyeyi paylaşıyorsa etiket kimseye verilmez. Etiket "zincirdeki ilk" değil "bizim bildiğimiz en eski" demektir, hiç indekslemediğimiz bir kontrat karşılaştırmaya giremez.
 
+## Liste genişliği
+
+Piyasa satırı normal bir dizüstü ekranına sığar, yatay kaydırma gerekmez. Sol taraftan yer kazanıldı: yıldız sütunu daraldı, token adı 170 pikselle sınırlandı ve uzun ad kesilip üç nokta ile gösteriliyor, ikon biraz küçüldü, trend çizgisi 88'den 74 piksele indi, sayı sütunları da kenar boşluğundan birkaç piksel verdi. Ölçüm: 1600 ve 1440 piksel genişlikte taşma sıfır. Bunun bir yan etkisi var, kaynak rozeti artık sembolün yanında değil altında duruyor.
+
 ## Tek liste
 
 Arşiv diye ayrı bir sekme yok. Elimizdeki her token ana listede, Trending altında görünür; son 24 saatte işlem görmemiş bir token da orada durur, hacme göre sıralandığı için zaten aşağıda kalır. Arama da aynı şekilde her şeyi kapsar, yeni çıkmış token da uzun süredir sessiz olan da çıkar. Üstteki ACTIVE MARKETS sayacı ve MOST ACTIVE şeridi yalnızca işlem görenleri sayar, çünkü onlar "şu an ne dönüyor" sorusunu yanıtlar.
@@ -121,7 +125,9 @@ Market overview'da yakılan arz gösterilir. Zincirden okunur, besleme verisine 
 
 Token detayında HOLDER MAP sekmesi var. En büyük 100 holder baloncuk olarak çizilir, boyut paylarıyla orantılıdır. İki baloncuk arasındaki çizgi şu anlama gelir: bu iki cüzdan birbirine bu tokenden göndermiş. Başka bir iddia taşımaz. Birbirine bağlı cüzdanlar küme olarak renklendirilir ve sağdaki listede üyeleriyle birlikte, toplam paylarıyla sıralanır.
 
-Veri tokenin kendi Transfer logundan gelir, kontratın doğduğu bloktan zincirin ucuna kadar, yine 10.000 bloklik pencerelerle. Eski bir token için bu birkaç dakika sürer, o yüzden arka planda tur tur işlenir ve ilerlemesi kaydedilir; sekme açıkken yüzde kaçının tarandığı yazar ve harita dolarken güncellenir. Bir kez tamamlandıktan sonra saklanır.
+Veri tokenin kendi Transfer logundan gelir, kontratın doğduğu bloktan zincirin ucuna kadar, yine 10.000 bloklik pencerelerle. İstekler demetler halinde paralel gider (`HOLDER_MAP_CONCURRENCY`, varsayılan 8), çünkü tek bir RPC isteği yaklaşık bir saniye sürerken sekizi birlikte de aynı sürede dönüyor. Kontratın doğum bloğu da her turda sekiz nokta birden yoklanarak aranır, ikili aramanın 25 ardışık isteği yerine yaklaşık 8 tur. Ölçüm: BARC 22 saniye (48 pencere), ARGUS 29 saniye (167), TOLLY 83 saniye (692).
+
+Kullanıcı beklemesin diye haritalar önden kurulur. Arka plan işçisi 24 saatlik hacmi olan tokenleri en yoğundan başlayarak kuyruğa alır (`HOLDER_MAP_SEED`, varsayılan 80) ve tur başına bir token işler. Biri henüz hazır olmayan bir tokeni açarsa isteği kuyruğun başına geçer. Sekme açıkken yüzde kaçının tarandığı yazar ve harita dolarken güncellenir; tamamlanan harita saklanır, altı saatte bir tazelenir.
 
 Kümeleme yalnızca sade cüzdanlar üzerinden yapılır. Kodu olan adresler (havuzlar, router'lar) ve yakma adresleri haritada görünür ve payları sayılır ama kimse onların üzerinden gruplanmaz. Bu olmadan herkesin işlem yaptığı tek bir PoolManager bütün holderları anlamsız tek bir kümeye toplardı, ilk denemede tam olarak bu oldu. Düzeltince BARC'ta iki gerçek küme kaldı: iki cüzdan %4,39 ve üç cüzdan %3,64.
 

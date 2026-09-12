@@ -71,3 +71,10 @@ test('the holder map has a tab, a canvas and a cluster list',()=>{
  assert.ok(terminal.includes('/api/holder-map/'),'it reads our own endpoint');
  assert.ok(terminal.includes('not proof of one owner'),'the picture states what it does not prove');
 });
+
+test('the market row is trimmed to fit a laptop screen without sideways scrolling',()=>{
+ const css=readFileSync(new URL('../public/terminal.css',import.meta.url),'utf8');
+ assert.ok(css.includes('.market-table .token-cell{max-width:170px}'),'the name column is capped');
+ assert.ok(css.includes('text-overflow:ellipsis'),'a long name is clipped rather than widening the row');
+ assert.ok(/\.market-table th,\.market-table td\{padding-left:8px/.test(css),'the number columns give up a little padding');
+});
