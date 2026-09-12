@@ -40,3 +40,27 @@ test('the chart can be shown as price or as market cap',()=>{
  assert.ok(terminal.includes('data-scale="price"')&&terminal.includes('data-scale="mc"'),'both buttons exist');
  assert.ok(terminal.includes('t.marketCap/t.price'),'supply comes from the row itself, so the chart agrees with the overview');
 });
+
+test('the side panel no longer carries the source health list or the archive prompt',()=>{
+ assert.ok(!terminal.includes('Connected sources'),'source health section removed');
+ assert.ok(!terminal.includes('LOOKING BACK'),'archive prompt removed');
+ assert.ok(!terminal.includes("$('source-health')")&&!terminal.includes("$('source-count')"),'nothing writes to the removed nodes');
+ assert.ok(terminal.includes('Market pulse'),'the pulse section stays');
+});
+
+test('a same ticker tab lists other tokens under the symbol and links to them',()=>{
+ assert.ok(terminal.includes('data-panel="same"'),'the tab exists');
+ assert.ok(terminal.includes("id=\"same-table\""),'its table is rendered');
+ assert.ok(terminal.includes("String(r.symbol||'').toLowerCase()===symbol.toLowerCase()"),'only an exact symbol match counts');
+ assert.ok(terminal.includes("r.address!==address"),'the token being viewed is not listed against itself');
+});
+
+test('the site is branded UFO Screener with an animated craft',()=>{
+ const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+ const css=readFileSync(new URL('../public/terminal.css',import.meta.url),'utf8');
+ assert.ok(html.includes('<b>UFO</b>')&&html.includes('<small>SCREENER</small>'),'the word mark reads UFO over SCREENER');
+ assert.ok(html.includes('UFO Screener \u00b7 Arc token markets'),'the page title carries the name');
+ assert.ok(!/ARC\s*RADAR/i.test(html),'the old name is gone');
+ assert.ok(css.includes('@keyframes ufo-hover'),'the craft moves');
+ assert.ok(css.includes('prefers-reduced-motion'),'motion is dropped when the system asks for less');
+});

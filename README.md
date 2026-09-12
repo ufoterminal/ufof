@@ -1,4 +1,4 @@
-# ARC Radar — salt okunur Arc terminali
+# UFO Screener — salt okunur Arc terminali
 
 RadarDEX referanslı token tablosu ve detay ekranı. Swap, cüzdan bağlantısı, launch işlemi, puan veya locker yoktur.
 
@@ -96,6 +96,10 @@ V2/V3/V4 filtreleri yalnızca kaynağın açıkça bildirdiği sürümü kullan�
 - Sharc sanal rezervleri likidite sayılmaz; toplam işlem sayısı 24 saatlik işlem sayısı yerine konmaz.
 - Tutarsız OHLC varsa kapanış fiyatlarıyla çizgi grafik ve görünür uyarı sunulur; hayali mum üretilmez.
 - İstatistikler yalnızca bağlı kaynak kapsamıdır, tüm Arc toplamı değildir. Rakamlar kaynak API'lerinin bildirimidir; bağımsız on-chain denetim garantisi değildir.
+
+## Marka
+
+Site adı UFO Screener. Üstte UFO, altında SCREENER yazar. Yanındaki figür SVG olarak çizilir, ayrı bir dosya veya resim yüklenmez: gövde süzülür, ışık huzmesi nefes alır, üç ışık sırayla yanar. İşletim sisteminde hareket azaltma açıksa animasyon çalışmaz.
 
 ## Grafik ölçeği
 

@@ -20,7 +20,7 @@ function listShell(){
  '<div class="filters"><select id="source-filter" aria-label="Launchpad"><option value="">All sources</option>'+Object.entries(SOURCES).map(([id,s])=>'<option value="'+id+'">'+s.label+'</option>').join('')+'</select><select id="version-filter" aria-label="Pool version"><option value="">All versions</option><option value="v2">V2</option><option value="v3">V3</option><option value="v4">V4</option></select><select id="venue-filter" aria-label="DEX"><option value="">All DEXes</option>'+Object.entries(VENUES).map(([id,label])=>'<option value="'+id+'">'+label+'</option>').join('')+'</select><label>MIN LIQ<input id="min-liquidity" type="number" min="0" placeholder="$0"></label><label>MIN VOL<input id="min-volume" type="number" min="0" placeholder="$0"></label><button id="clear-filters" class="muted">Reset</button></div>'+ 
  '<div class="table-scroll"><table class="market-table"><thead><tr><th></th><th> TOKEN</th><th>TREND</th>'+[['marketCap','MCAP'],['price','PRICE'],['createdAt','TOKEN AGE'],['volume','VOLUME ↓'],['transactions','TXNS']].map(([key,label])=>'<th data-sort="'+key+'">'+label+'</th>').join('')+'<th>TRADERS</th><th data-sort="holders">HOLDERS</th><th>5M</th><th>1H</th><th>6H</th><th data-sort="change">24H</th><th data-sort="liquidity">LIQUIDITY</th></tr></thead><tbody id="market-rows">'+Array.from({length:8},()=>'<tr><td></td><td><div class="skeleton"></div></td><td colspan="13"><div class="skeleton"></div></td></tr>').join('')+'</tbody></table></div>'+
  '<footer class="footer"><span id="result-count">Loading markets…</span><div class="pagination"><button id="page-prev" aria-label="Previous page">‹</button><span id="page-label">1 / 1</span><button id="page-next" aria-label="Next page">›</button></div></footer></section>'+
- '<aside class="sidepanel"><section class="side-section"><h2 class="side-title">Market pulse <span>24H</span></h2><div id="pulse"></div></section><section class="side-section"><h2 class="side-title">Connected sources <span id="source-count"></span></h2><div id="source-health"></div><p class="side-note">Market data comes from launchpads and connected market indexers. An unavailable value is shown as —.</p></section><section class="side-section"><div class="eyebrow">LOOKING BACK?</div><p class="side-note">Search names, symbols or addresses to find older tokens too.</p><button data-mode="all">Explore the archive ↗</button></section></aside></div>';
+ '<aside class="sidepanel"><section class="side-section"><h2 class="side-title">Market pulse <span>24H</span></h2><div id="pulse"></div></section></aside></div>';
  app.addEventListener('click',listClick);
  for(const [id,key] of [['source-filter','source'],['version-filter','version'],['venue-filter','venue'],['min-liquidity','minLiquidity'],['min-volume','minVolume']])$(id).addEventListener('change',()=>{state[key]=$(id).value;state.page=1;loadList();});
 }
@@ -49,8 +49,8 @@ function paintList(){
  $('synced').textContent=d.updatedAt?'Updated '+age(d.updatedAt)+' ago':'Syncing…';
  $('tape-items').innerHTML=d.trending.map((t,i)=>'<a class="tape-item" href="/token/'+esc(t.address)+'"><span class="muted">#'+(i+1)+'</span><b>'+esc(t.symbol)+'</b><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span></a>').join('');
  $('pulse').innerHTML=d.trending.slice(0,5).map(t=>'<a class="pulse-row" href="/token/'+esc(t.address)+'">'+icon(t)+'<div><b>'+esc(t.symbol)+'</b><small>'+usd(t.volume)+' volume</small></div><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span></a>').join('');
- const health=d.status?.sources||[];$('source-count').textContent=health.filter(s=>s.ok).length+' ONLINE';
- $('source-health').innerHTML=Object.keys(SOURCES).map(id=>{const h=health.find(s=>s.id===id);const pending=h?.mode==='pending';return '<div class="source-row"><span>'+esc(sourceName(id))+'</span><span class="'+(h?.ok&&!pending?'up':'muted')+'">'+(pending?'Arc feed pending':h?.ok?'● Connected':h?'Unavailable':'Connecting')+'</span></div>';}).join('');
+ // Source health and the archive prompt are no longer shown in the panel. The data behind them is still
+ // served at /api/status, and the archive is still reachable through search and the mode filter.
  $('list-banner').textContent=d.status?.lastError?'Some sources are unavailable. Their last received data is retained.':d.status?.syncing&&!d.rows.length?'Connecting to source feeds…':'';
 }
 async function search(){
@@ -67,7 +67,7 @@ document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA'].in
 document.addEventListener('click',e=>{if(!e.target.closest('.searchbox'))$('search-results').hidden=true;});
 let chart,candleSeries,lineSeries,volumeSeries,chartTokenTf=null;
 function detailShell(){
- app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart scale"><button data-scale="price" class="'+(scaleMode==='price'?'active':'')+'">Price</button><button data-scale="mc" class="'+(scaleMode==='mc'?'active':'')+'">MC</button></div><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><span id="trade-count"></span><span style="margin-left:auto" id="panel-note">Most recent · source feed</span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th></tr></thead><tbody id="holders"><tr><td colspan="4" class="empty">Loading holders…</td></tr></tbody></table></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
+ app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart scale"><button data-scale="price" class="'+(scaleMode==='price'?'active':'')+'">Price</button><button data-scale="mc" class="'+(scaleMode==='mc'?'active':'')+'">MC</button></div><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><button class="panel-tab" data-panel="same">SAME TICKER</button><span id="trade-count"></span><span style="margin-left:auto" id="panel-note">Most recent · source feed</span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th></tr></thead><tbody id="holders"><tr><td colspan="4" class="empty">Loading holders…</td></tr></tbody></table><table class="trades-table" id="same-table" hidden><thead><tr><th>TOKEN</th><th>SOURCE</th><th>PRICE</th><th>MCAP</th><th>VOLUME</th><th>AGE</th></tr></thead><tbody id="same"><tr><td colspan="6" class="empty">Looking for tokens with this ticker…</td></tr></tbody></table></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
  app.addEventListener('click',e=>{const b=e.target.closest('[data-tf]');if(b){tf=b.dataset.tf;history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);document.querySelectorAll('[data-tf]').forEach(x=>x.classList.toggle('active',x===b));loadDetail();}const v=e.target.closest('[data-view]');if(v){viewMode=v.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===v));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}const sc=e.target.closest('[data-scale]');if(sc){scaleMode=sc.dataset.scale;document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x===sc));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode+'&scale='+scaleMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}
   if(e.target.closest('#fit-chart'))chart?.timeScale().fitContent();const copy=e.target.closest('[data-copy]');if(copy)navigator.clipboard.writeText(copy.dataset.copy).then(()=>toast('Address copied')).catch(()=>toast('Copy not available'));const s=e.target.closest('[data-star]');if(s){saveWatch(s.dataset.star);if(currentDetail)paintDetail(currentDetail);}});
 }
@@ -91,7 +91,7 @@ function chartScale(t){
 }
 
 function paintDetail(d){
- const t=d.market;document.title=(t.symbol||'Token')+' · ARC Radar';
+ const t=d.market;document.title=(t.symbol||'Token')+' · UFO Screener';
  $('token-heading').innerHTML='<a class="back" href="/" aria-label="Back to markets">←</a>'+icon(t)+'<div><h1>'+esc(t.symbol)+'</h1><span class="muted">'+esc(t.name)+'</span></div><span class="source-badge">'+esc(sourceName(t.source))+'</span><strong class="head-price">'+price(t.price)+'</strong><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span><div class="contract">'+star(t.address)+'<span>'+esc(short(t.address))+'</span><button class="icon-btn" data-copy="'+esc(t.address)+'" aria-label="Copy contract address">⧉</button></div>';
  $('detail-metrics').innerHTML='<h2 class="details-title">Market overview</h2><div class="metrics">'+[['Price',price(t.price)],['Market cap',usd(t.marketCap)],['Liquidity',usd(t.liquidity)],['24h volume',usd(t.volume)],['24h transactions',count(t.transactions)],['Holders',count(t.holders)],['Burned supply',valid(t.burned)?count(t.burned)+(valid(t.burnedPercent)?' \u00b7 '+Number(t.burnedPercent).toFixed(2)+'%':''):'\u2014']].map(([label,value])=>'<div class="metric"><small>'+label+'</small><b>'+value+'</b></div>').join('')+'</div><div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'+
  '<div class="buy-sell"><span class="up">Buys '+count(t.buys)+'</span><span class="down">Sells '+count(t.sells)+'</span></div>'+(valid(t.buys)&&valid(t.sells)&&t.buys+t.sells>0?'<div class="ratio"><span style="width:'+(t.buys/(t.buys+t.sells)*100)+'%"></span></div>':'')+
@@ -123,11 +123,36 @@ let panel='trades',holdersFor=null,holdersController;
 function showPanel(name){
  panel=name;
  document.querySelectorAll('[data-panel]').forEach(b=>b.classList.toggle('active',b.dataset.panel===name));
- const trades=document.querySelector('.trades-table'),holders=$('holders-table');
- trades.hidden=name!=='trades';holders.hidden=name!=='holders';
+ const trades=document.querySelector('.trades-table');
+ trades.hidden=name!=='trades';$('holders-table').hidden=name!=='holders';$('same-table').hidden=name!=='same';
  $('trade-count').textContent=name==='trades'?(currentDetail?currentDetail.trades.length+' trades':''):'';
- $('panel-note').textContent=name==='trades'?'Most recent \u00b7 source feed':'Largest first';
+ $('panel-note').textContent=name==='trades'?'Most recent \u00b7 source feed':name==='holders'?'Largest first':'Same symbol, different contracts';
  if(name==='holders')loadHolders();
+ if(name==='same')loadSame();
+}
+
+// Tokens trading under the same ticker. A symbol is not unique on chain, so the list is there to let the
+// reader check they are looking at the contract they meant, not to suggest any of them is the real one.
+let sameFor=null,sameController;
+async function loadSame(){
+ if(!currentDetail||sameFor===address)return;
+ const symbol=String(currentDetail.market?.symbol||'').trim();
+ if(!symbol){$('same').innerHTML='<tr><td colspan="6" class="empty">This token has no symbol to match.</td></tr>';return;}
+ sameFor=address;sameController?.abort();sameController=new AbortController();
+ try{
+  const d=await api('/api/markets?mode=all&limit=100&q='+encodeURIComponent(symbol),sameController);
+  const rows=d.rows.filter(r=>String(r.symbol||'').toLowerCase()===symbol.toLowerCase()&&r.address!==address);
+  if(panel==='same')$('trade-count').textContent=rows.length?count(rows.length)+' other'+(rows.length===1?'':'s'):'';
+  if(!rows.length){
+   sameFor=null;
+   $('same').innerHTML='<tr><td colspan="6" class="empty">No other token is trading under this ticker.</td></tr>';return;
+  }
+  $('same').innerHTML=rows.map(r=>'<tr class="same-row"><td><a class="token-cell" href="/token/'+esc(r.address)+'">'+icon(r)+'<span><strong>'+esc(r.symbol||'?')+'</strong><small class="muted">'+esc(short(r.address))+'</small></span></a></td><td class="muted">'+esc(sourceName(r.source))+'</td><td>'+price(r.price)+'</td><td>'+usd(r.marketCap)+'</td><td>'+usd(r.volume)+'</td><td>'+age(r.createdAt)+'</td></tr>').join('');
+ }catch(e){
+  if(e.name==='AbortError')return;
+  sameFor=null;
+  $('same').innerHTML='<tr><td colspan="6" class="empty">Ticker search unavailable right now.</td></tr>';
+ }
 }
 async function loadHolders(){
  if(!currentDetail||holdersFor===address)return;
