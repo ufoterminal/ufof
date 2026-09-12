@@ -123,3 +123,11 @@ The slow part was never the amount of data, it was which endpoint served it. The
 Bubblemaps itself keeps an indexed transfer database rather than scanning per request, and hides contracts and exchanges by default for the same reason we exclude them from clustering. The explorer's own transfer index was measured as an alternative and rejected: it is complete but pages 100 records at a time behind a cursor with no block-range parameter, which is 62 sequential pages for BARC and 164 for TOLLY, slower than parallel RPC windows.
 
 Map building is paused while a market sync is in flight. Both draw on the same endpoints, and sixteen parallel window reads starved the startup sync badly enough that it never finished.
+
+The header price used to be read off the last candle of whichever timeframe was open. Each timeframe's snapshot is prepared at its own moment, so the same token reported 0.0025767 on 1m and 0.0025566 on 15m, and the market cap scale moved with it. The figure now comes from the market row and is refreshed on every serve. Checked across 1m, 5m, 15m, 1h, 4h and 1d on the five busiest tokens: one distinct price each, none disagreeing.
+
+# long.supply and the o1 launchpad (2026-09-12)
+
+Neither publishes a token list, so membership is read from their factories. Both were found on chain, not from the sites: for several tokens the creation block was located by binary search over archive state, the transaction in that block that created the token named the factory, and the factory log in that block whose first topic held the new token's address named the launch event. long.supply launches from `0x3324d45d...24b5` with event `0x50aaba7c...`, the o1 launchpad from `0xee3e862e...4605` with event `0x207384e8...`.
+
+The node returned every log of a factory regardless of the topic filter sent with the request, and each factory emits several events per launch, so the first scan put pool addresses and USDC into the o1 registry. The event is now matched in our own code and its signature is part of the scan cursor, so changing which event is read rescans rather than trusting old rows. After the fix: long 181 launches, o1 36, no junk entries, and o1 matches RadarDEX's count for the same tag exactly. Through the pipeline long produced 181 rows with 129 priced and 15 registry-only, o1 36 rows with 34 priced.

@@ -62,3 +62,15 @@ test('only an outright earliest contract under a ticker is the original',async()
  assert.equal(await isOriginalTicker('0x'+'3'.repeat(40),'TIE'),false,'a shared earliest second is nobody\u2019s first');
  assert.equal(await isOriginalTicker('0x'+'9'.repeat(40),''),false,'no symbol, no mark');
 });
+
+test('a stored snapshot shows the current price, not the one its timeframe was built with',async()=>{
+ const {withLiveFigures}=await import('../src/market-service.js');
+ const stored={address:'0x'+'7'.repeat(40),symbol:'TF',price:0.0025566,marketCap:2400000,name:'Old',source:'tolly'};
+ const row={address:'0x'+'7'.repeat(40),symbol:'TF',name:'Old',launchpad_id:'tolly',
+  metadata:{feed_schema:2,source:'tolly',price:0.00257668,mcap:2480000,liquidity:1000,volume24h:5,holders:9}};
+ const merged=withLiveFigures(stored,row);
+ assert.equal(merged.price,0.00257668,'every timeframe reports the same, current price');
+ assert.equal(merged.marketCap,2480000,'so the market cap scale agrees with it');
+ assert.equal(merged.name,'Old','what the snapshot holds of itself is left alone');
+ assert.equal(withLiveFigures(null,row),null);
+});

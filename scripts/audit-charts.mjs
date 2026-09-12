@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 const base=process.env.TEST_URL||'http://127.0.0.1:3478';
 const get=async path=>{const r=await fetch(base+path,{signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error('HTTP '+r.status);return r.json();};
 const frames={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
-const cases=['radardex','tolly','sharc','dyor','circlewarp','archemist','pools-trade','noxa','argus','uniswap','uniswap-v4','dyorswap-v2'];
+const cases=['radardex','tolly','sharc','dyor','circlewarp','archemist','pools-trade','noxa','argus','long','o1','uniswap','uniswap-v4','dyorswap-v2'];
 const failures=[];
 for(const source of cases){
  try{

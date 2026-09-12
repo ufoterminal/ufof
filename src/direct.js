@@ -1,10 +1,15 @@
 // Public, read-only endpoints verified against each pad's own frontend.
 import {argusRegistry,launchMeta} from './argus.js';
+import {PAD_REGISTRIES,scanPad,padLaunches} from './pad-registry.js';
 export const feeds = {
   noxa: 'https://api.radardex.pro/tokens?launchpad=noxa&sort=volume24&dir=desc&window=24h&limit=500',
   // ArgusPad market numbers. Membership is decided by the on-chain Portal registry in argus.js;
   // rows here are only accepted for addresses that registry lists.
   argus: 'https://api.radardex.pro/tokens?launchpad=argus&sort=volume24&dir=desc&window=24h&limit=500',
+  // long.supply and the o1 launchpad publish no token list either; see pad-registry.js for how their
+  // factories are read. These feeds supply only the market numbers.
+  long: PAD_REGISTRIES.long.feed,
+  o1: PAD_REGISTRIES.o1.feed,
   radardex: 'https://api.radardex.pro/tokens?launchpad=radar&sort=volume24&dir=desc&window=24h&limit=500',
   tolly: 'https://api.tollylabs.com/tokens?scope=ours&sort=volume&dir=desc&limit=500&offset=0',
   sharc: 'https://sharc.fun/api/tokens',
@@ -38,6 +43,20 @@ export async function cachedJson(url,ttl=30000){
 export const number=x=>x==null||x===''||!Number.isFinite(Number(x))?null:Number(x);
 const unix=x=>{if(x==null||x==='')return null;const n=typeof x==='string'&&!/^\d+(?:\.\d+)?$/.test(x)?Date.parse(x):Number(x);return Number.isFinite(n)?Math.floor(n>1e12?n/1000:n):null};
 export async function ownList(id){
+ if(PAD_REGISTRIES[id]){
+  const [,payload]=await Promise.all([scanPad(id).catch(()=>null),cachedJson(feeds[id],60000)]);
+  if(!Array.isArray(payload.tokens))throw Error(PAD_REGISTRIES[id].label+' unexpected token list');
+  const registry=await padLaunches(id);
+  const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));
+  const withMeta=[];
+  for(const entry of registry){
+   const row={address:entry.token,factory:entry.factory,at:entry.at==null?null:Number(entry.at)};
+   if(listed.has(entry.token)){withMeta.push(row);continue;}
+   const meta=await launchMeta(entry.token).catch(()=>({}));
+   withMeta.push({...row,...meta});
+  }
+  return {...payload,registry:withMeta,mirror:true};
+ }
  if(id==='argus'){
   const [registry,payload]=await Promise.all([argusRegistry(),cachedJson(feeds.argus,60000)]);
   if(!Array.isArray(payload.tokens))throw Error('ArgusPad unexpected token list');
@@ -145,6 +164,29 @@ export function candlesFromTrades(trades,seconds){
   return [...buckets.values()].sort((a,b)=>a.bucket-b.bucket).slice(-500);
 }
 export function normalizeDirect(id,json,now=Math.floor(Date.now()/1000)){
+  if(PAD_REGISTRIES[id]){
+   const pad=PAD_REGISTRIES[id];
+   if(!Array.isArray(json.tokens))throw Error(pad.label+' unexpected token list');
+   if(!Array.isArray(json.registry))throw Error(pad.label+' registry missing');
+   const registry=new Map(json.registry.filter(r=>/^0x[0-9a-f]{40}$/i.test(r?.address)).map(r=>[r.address.toLowerCase(),r]));
+   // Both checks: the feed tags the token as this pad's, and the pad's factory actually launched it.
+   const rows=normalizeDirect('pools-trade',{tokens:json.tokens.filter(t=>t.launchpad===pad.tag&&registry.has(String(t.address||'').toLowerCase())).map(t=>({...t,launchpad:'poolstrade'}))},now)
+    .map(t=>{const r=registry.get(t.address);return {...t,launchpad_id:id,factory:r.factory,
+     creation_at:t.creation_at??r.at??null,
+     metadata:{...t.metadata,source:id,data_provider:'radardex',pad_factory:r.factory,token_created_at:t.metadata?.token_created_at??r.at??null}};});
+   const seen=new Set(rows.map(r=>r.address));
+   for(const [address,r] of registry){
+    if(seen.has(address))continue;
+    // Launched on chain, no market numbers yet. Unknown, never zero.
+    rows.push({address,name:String(r.name||''),symbol:String(r.symbol||''),decimals:number(r.decimals),total_supply:null,
+     creation_at:r.at??null,launchpad_id:id,factory:r.factory,
+     metadata:{feed_schema:2,source:id,data_provider:'pad-factory',pad_factory:r.factory,versions:[],
+      logo:null,price:null,mcap:null,liquidity:null,volume24h:null,txns24h:null,traders24h:null,holders:null,
+      buys24h:null,sells24h:null,token_created_at:r.at??null,last_trade_at:null,provider_updated_at:now,spark:[],
+      changes:{'5m':null,'1h':null,'6h':null,'24h':null}}});
+   }
+   return rows;
+  }
   if(id==='argus'){
    if(!Array.isArray(json.tokens))throw Error('ArgusPad unexpected token list');
    if(!Array.isArray(json.registry))throw Error('ArgusPad registry missing');
@@ -229,12 +271,13 @@ export async function directDetail(source,address,tf='1h'){
  if(!seconds)throw Error('Unsupported timeframe');
  const errors={};let detail=null,chart=[],swaps=[];
  const read=async(key,url)=>{try{return await cachedJson(url)}catch(e){errors[key]=e.message;return null;}};
- if(['radardex','noxa','argus','indexed-market','uniswap','dyorswap-v2'].includes(source)){
+ if(['radardex','noxa','argus','long','o1','indexed-market','uniswap','dyorswap-v2'].includes(source)){
   const base='https://api.radardex.pro/token/'+address;
   const results=await Promise.all([read('detail',base),read('chart',base+'/chart?tf='+seconds+'&limit=500'),read('trades',base+'/swaps?limit=60')]);
   detail=results[0];chart=results[1]?.candles||[];
   if(detail&&source==='noxa'&&detail.launchpad!=='noxa')throw Error('Source ownership check failed');
   if(detail&&source==='argus'&&detail.launchpad!=='argus')throw Error('Source ownership check failed');
+  if(detail&&PAD_REGISTRIES[source]&&detail.launchpad!==PAD_REGISTRIES[source].tag)throw Error('Source ownership check failed');
   if(detail&&source==='radardex'&&(detail.launched!==true||(detail.launchpad&&!['radar','radardex'].includes(detail.launchpad))))throw Error('Source ownership check failed');
   if(detail?.address&&detail.address.toLowerCase()!==address.toLowerCase())throw Error('Token address mismatch');
   swaps=(results[2]?.swaps||[]).map(s=>({at:Number(s.time),buy:s.side==='buy',usd_volume:number(s.usdc),price:number(s.price),trader:s.trader,tx:s.txHash}));

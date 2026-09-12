@@ -61,9 +61,15 @@ tokenlerin her an güncel veya ilk açılışının anlık olduğu garanti edilm
 | Archemist | Kendi launch registry API'si (factory doğrulamalı, 54 token) | Kendi token/chart uçları; V2/V3 bilgisi korunur |
 | pools.trade | Arc üzerinde `poolstrade` olarak etiketlenen 30 tokenlik aktif kaynak | Liste için filtreli keşif mirror'ı, grafik için pools.trade tRPC Arc fiyat/OHLC API'si |
 | Kendi zincir okumamız | Uniswap v3 fabrikası ve v4 PoolManager'ın havuz açılış logları | Havuzun kendi Swap loglarından fiyat, hacim, işlem, değişim |
+| Long (long.supply) | Fabrikanın launch olayı (`0x3324d45d...24b5`) | Piyasa sayıları `launchpad=long` beslemesinden, yalnızca fabrikanın çıkardığı adreslere |
+| o1 (launch.o1.exchange) | Fabrikanın launch olayı (`0xee3e862e...4605`) | Piyasa sayıları `launchpad=o1` beslemesinden, yalnızca fabrikanın çıkardığı adreslere |
 | ArgusPad | Zincirdeki Portal kayıtları (`tokenCount` / `allTokens`, 6 Portal) | Piyasa sayıları ve logo `launchpad=argus` beslemesinden, yalnızca Portal'ın listelediği adreslere; grafik ve işlemler RadarDEX token uçlarından |
 
 DYOR artık kendi Arc API'sinden canlı liste ve detay/işlem verisi sağlar. API bir grafik endpoint'i yayınlamadığı için mumlar yalnızca DYOR'un `/trades` yanıtındaki gerçek fiyat ve hacim kayıtları gruplanarak üretilir; interpolasyon veya üçüncü taraf grafik verisi kullanılmaz. CircleWarp ve Archemist yalnızca kendi launch registry/screener kayıtlarını kullanır; genel Arc/Uniswap listesi bu kaynaklara karıştırılmaz. pools.trade aktif: keşif isteği yalnızca `launchpad=poolstrade` filtresiyle yapılır, dolayısıyla diğer RadarDEX tokenleri içeri alınmaz; fiyat ve OHLC detayları pools.trade'ın Arc (5042) tRPC prosedürlerinden okunur. pools.trade'ın herkese açık launcher listesi hâlâ Robinhood sonuçları döndürdüğü için bu liste doğrudan kullanılmaz.
+
+long.supply ve o1 launchpad da token listesi yayınlamıyor. `src/pad-registry.js` bu ikisinin fabrikalarını dinler: her launch için fabrikanın yaydığı olayın ilk konumunda yeni tokenin adresi durur, kayıt bundan ibarettir. Fabrika ve olay siteden değil zincirden bulundu: birkaç tokenin doğum bloğu arşiv üzerinden ikili aramayla bulundu, o bloktaki tokeni yaratan işlem fabrikayı verdi, o blokta fabrikanın yaydığı loglardan ilk konumunda tokenin adresi bulunan da launch olayını verdi. Doğrulama (12 Eylül 2026): long 181, o1 36 launch; o1'in sayısı RadarDex'in aynı etiketle gördüğüyle birebir aynı.
+
+Bir tuzak vardı: düğüm, istekte verilen topic filtresini uygulamadan fabrikanın tüm loglarını döndürüyordu ve bir fabrika launch başına birkaç farklı olay yayıyor. Yanlış olayı okumak kayda havuz adreslerini ve hatta USDC'yi sokmuştu. Olay artık istekte değil kendi tarafımızda eşleştirilir ve olayın imzası imleç anahtarının parçasıdır, yani hangi olayın okunduğu değişirse tarama baştan yapılır.
 
 ArgusPad token listesi yayınlamıyor; launch listesi Portal kontratlarında duruyor. Hangi tokenin ArgusPad'e ait olduğunu `src/argus.js` zincirden okuyarak belirler. Portal adresleri ve sırası ArgusPad'in kendi entegrasyon dosyasından alındı (https://arguspad.io/argus-v4.json). Bir satır ancak hem beslemede `launchpad=argus` etiketi taşıyorsa hem de bir Portal onu listeliyorsa kabul edilir. Zincirde olup beslemede henüz görünmeyen yeni bir launch da listeye girer: adı ve sembolü token kontratından okunur, fiyat ve hacim bilinmiyor olarak kalır, sıfır yazılmaz. Her yenilemede Portal başına yalnızca yeni indeksler okunur. Arc JSON-RPC toplu isteği reddettiği için istekler tek tek gider. Doğrulama (12 Eylül 2026): zincirde 42 launch (16+1+22+1+1+1), beslemede 42, hepsinde logo.
 
@@ -112,6 +118,10 @@ Arşiv diye ayrı bir sekme yok. Elimizdeki her token ana listede, Trending alt�
 ## Marka
 
 Site adı UFO Screener. Üstte UFO, altında SCREENER yazar. Yanındaki figür SVG olarak çizilir, ayrı bir dosya veya resim yüklenmez: gövde süzülür, ışık huzmesi nefes alır, üç ışık sırayla yanar. İşletim sisteminde hareket azaltma açıksa animasyon çalışmaz.
+
+## Fiyat tutarlılığı
+
+Başlıktaki fiyat ve market değeri her zaman diliminde aynıdır. Eskiden bu rakam o zaman diliminin son mumundan okunuyordu; her zaman diliminin anlık görüntüsü kendi anında hazırlandığı için aynı token 1m'de bir fiyat, 1d'de başka bir fiyat gösteriyordu ve MC ölçeği de onunla birlikte kayıyordu. Artık rakam piyasa satırından gelir ve sayfa her servis edildiğinde tazelenir. Grafik kendi kaydettiği akışı göstermeye devam eder, başlık ise en güncel değeri.
 
 ## Grafik ölçeği
 

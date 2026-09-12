@@ -134,10 +134,22 @@ export async function buildMarket(address,tf='1h'){
  try{market.originalTicker=await isOriginalTicker(market.address,market.symbol);}catch{/* the mark is simply absent */}
  const trades=remote?.trades||[];
  if(trades[0]?.at)market.lastTradeAt=validTime(trades[0].at)||market.lastTradeAt;
- // The visible price and chart close must refer to the same recorded stream.
- if(remote?.candles?.length)market.price=remote.candles.at(-1).close;
+ // The price is not taken from the last candle. Each timeframe's snapshot is prepared at its own moment,
+ // so reading the price off the chart made the same token show a different price on 1m than on 1d, and
+ // the market cap scale with it. The figure comes from the market row and is refreshed when served.
  return {market,timeframe:tf,candles:remote?.candles||[],closes:remote?.closes||[],chartMode:remote?.chartMode||'candles',history:remote?.history,trades,errors:remote?.errors||{detail:error},
   supported:!!remote,receivedAt:Math.floor(Date.now()/1000)};
+}
+
+// What a snapshot holds of its own timeframe stays; what the market is worth right now comes from the
+// row, so every timeframe agrees and none of them shows a figure older than the last sync.
+const LIVE_FIGURES=['price','marketCap','liquidity','volume','transactions','traders','holders','buys','sells','changes','lastTradeAt','spark'];
+export function withLiveFigures(market,row){
+ if(!market||!row)return market;
+ const live=mapMarket(row);
+ const merged={...market};
+ for(const key of LIVE_FIGURES)if(live[key]!=null)merged[key]=live[key];
+ return merged;
 }
 
 export async function getMarket(address,tf='1h'){
@@ -147,7 +159,8 @@ export async function getMarket(address,tf='1h'){
  if(!row)return null;
  await requestSnapshot(address,tf,10);
  const saved=await readSnapshot(address,tf);
- if(saved)return {...saved.payload,cache:{updatedAt:saved.updated,stale:Date.now()-saved.updated>60000}};
+ if(saved)return {...saved.payload,market:withLiveFigures(saved.payload.market,row),
+  cache:{updatedAt:saved.updated,stale:Date.now()-saved.updated>60000}};
  return {market:{...mapMarket(row),price:null},timeframe:tf,candles:[],closes:[],trades:[],chartMode:'candles',supported:true,
  history:{loading:true,complete:false},errors:{chartNotice:'Historical data is being prepared in the background.'},cache:{pending:true}};
 }

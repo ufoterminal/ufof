@@ -1,5 +1,5 @@
 import {cachedJson,normalizeDirect} from './direct.js';
-const pads={radar:'radardex',radardex:'radardex',tolly:'tolly',sharc:'sharc',dyor:'dyor',warp:'circlewarp',circlewarp:'circlewarp',archemist:'archemist',poolstrade:'pools-trade',noxa:'noxa',argus:'argus'};
+const pads={radar:'radardex',radardex:'radardex',tolly:'tolly',sharc:'sharc',dyor:'dyor',warp:'circlewarp',circlewarp:'circlewarp',archemist:'archemist',poolstrade:'pools-trade',noxa:'noxa',argus:'argus',long:'long',o1:'o1'};
 export function dexVenues(t){return [...(t.versions?.includes('v3')?['uniswap-v3']:[]),...(t.versions?.includes('v4')?['uniswap-v4']:[]),...(t.versions?.includes('v2')&&t.v2Dexes?.includes('dyor')?['dyorswap-v2']:[])];}
 export function normalizeDex(payload){
  const rows=[];
