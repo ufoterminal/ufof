@@ -26,6 +26,16 @@ export function normalizeDyor(json,now=Math.floor(Date.now()/1000)){
  if(Number(json?.chainId)!==5042||String(json?.chain||'arc').toLowerCase()!=='arc')throw Error('DYOR response is not Arc 5042');
  return (Array.isArray(json.items)?json.items:Array.isArray(json.data)?json.data:[]).map(x=>{const address=addr(pick(x,'token','address','tokenAddress'));if(!address)return null;return {address,name:String(x.name||''),symbol:String(x.symbol||''),decimals:null,total_supply:null,creation_at:unix(x.created_at),launchpad_id:'dyor',factory:addr(x.factory),metadata:{feed_schema:2,source:'dyor',token_created_at:unix(x.created_at),last_trade_at:unix(x.lastTradeAt),price:finite(x.marketCapEth)!=null?finite(x.marketCapEth)/1e6/1e9:null,mcap:finite(x.marketCapEth)!=null?finite(x.marketCapEth)/1e6:null,liquidity:finite(x.liquidityEth)!=null?finite(x.liquidityEth)/1e6:null,volume24h:finite(x.volume24hWei)!=null?finite(x.volume24hWei)/1e6:null,txns24h:null,traders24h:null,holders:null,buys24h:null,sells24h:null,changes:{'5m':null,'1h':null,'6h':null,'24h':null},pool:x.pool,versions:['v3'],logo:safeUrl(x.image),website:safeUrl(x.website),twitter:safeUrl(x.x),telegram:safeUrl(x.telegram),description:String(x.description||'').slice(0,2000),provider_updated_at:now}}}).filter(Boolean);
 }
+// One unresponsive source used to hold up the entire sync, and with it the market list, for as long as it
+// took. Every source now runs against a deadline: whatever has not answered in time is reported as failed
+// for this round and the rest of the sync carries on.
+const SOURCE_TIMEOUT=Math.max(5000,Math.min(600000,Number(process.env.SOURCE_TIMEOUT_MS||90000)));
+export function withDeadline(promise,label,ms=SOURCE_TIMEOUT){
+ let timer;
+ return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' took longer than '+Math.round(ms/1000)+'s')),ms);})])
+  .finally(()=>clearTimeout(timer));
+}
+
 export async function syncExternal(){
  const now=Math.floor(Date.now()/1000);const out=[];let status=[];
  try{const rows=await dexMarkets();out.push(...rows);status.push({id:'uniswap',ok:true,count:rows.filter(r=>r.metadata.venues.some(v=>v.startsWith('uniswap'))).length,mode:'market-index'});status.push({id:'dyorswap-v2',ok:true,count:rows.filter(r=>r.metadata.venues.includes('dyorswap-v2')).length,mode:'market-index'});}catch(e){status.push({id:'uniswap',ok:false,error:e.message},{id:'dyorswap-v2',ok:false,error:e.message});}
@@ -33,10 +43,10 @@ export async function syncExternal(){
  try{const d=await ownList('dyor');const rows=normalizeDyor(d,now);out.push(...rows);status.push({id:'dyor',ok:true,count:rows.length,pages:d.pagination_pages||1,updated_at:now})}catch(e){status.push({id:'dyor',ok:false,error:e.message,updated_at:now})}
  // Our own reading of the chain. It runs last so that where we measured a number ourselves it is the
  // one shown, while logos, socials and pad attribution from the feeds above are left untouched.
- try{const progress=await onchainSync();const rows=await onchainMarkets(now);out.push(...rows);
+ try{const progress=await withDeadline(onchainSync(),'on-chain sync');const rows=await onchainMarkets(now);out.push(...rows);
   status.push({id:'onchain',ok:true,count:rows.length,mode:'self-indexed',head:progress.head,new_pools:progress.pools,new_trades:progress.trades});
  }catch(e){status.push({id:'onchain',ok:false,error:e.shortMessage||e.message});}
- for(const id of ['tolly','sharc','circlewarp','archemist','pools-trade','noxa','argus','long','o1']){try{const payload=await ownList(id),rows=normalizeDirect(id,payload,now);out.push(...rows);status.push({id,ok:true,count:rows.length,mode:payload.mirror?'live-mirror':'live'})}catch(e){status.push({id,ok:false,error:e.message})}}
+ for(const id of ['tolly','sharc','circlewarp','archemist','pools-trade','noxa','argus','long','o1']){try{const payload=await withDeadline(ownList(id),id),rows=normalizeDirect(id,payload,now);out.push(...rows);status.push({id,ok:true,count:rows.length,mode:payload.mirror?'live-mirror':'live'})}catch(e){status.push({id,ok:false,error:e.message})}}
  await persistRecords(out);
  return status;
 }

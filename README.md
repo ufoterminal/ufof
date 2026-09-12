@@ -147,6 +147,16 @@ Panel şunu açıkça yazar: bir küme bakılmaya değer bir örüntüdür, tek 
 
 İşlem listesinin yanında holder listesi var, sekmeyle geçiliyor ve ancak açıldığında yükleniyor. Kaynak sırası şöyle: önce zincir explorer'ının kendi endeksi (`api.arc-scan.org/v1/tokens/{adres}/holders`), çünkü padden bağımsız olarak her tokeni kapsıyor. Bazı tokenlerde sürekli 500 döndüğü için ikinci sırada tokenin kendi padi geliyor (Tolly ve CircleWarp holder yayınlıyor), üçüncü sırada genel bir endeks. Üçü de vermezse liste boş kalır ve panel bunu açıkça söyler, uydurma satır üretilmez. Listede cüzdan olmayan adresler etiketlenir: indekslediğimiz v2/v3 havuzları ve v4 PoolManager "Pool", yakma adresleri "Burned" olarak işaretlenir, böylece en büyük holder sanılmazlar.
 
+## Senkron dayanıklılığı
+
+Her kaynak kendi süre sınırıyla çalışır (`SOURCE_TIMEOUT_MS`, varsayılan 90 sn). Zamanında cevap vermeyen kaynak o tur başarısız sayılır ve senkron kalanıyla devam eder. Öncesinde tek bir yavaş kaynak bütün turu rehin alıyordu, üretimde senkron hiç bitmiyor ve liste boş kalıyordu.
+
+Fabrika kaydında olup beslemede görünmeyen tokenlerin adı kontratlarından okunur. Bu okumalar eskiden tek tek yapılıyordu; long gibi yüzlerce launch'ı olan bir padde bu yüzlerce ardışık RPC çağrısı demekti ve tur dakikalarca sürüyordu. Artık tur başına sınırlı sayıda (`PAD_META_PER_PASS`, varsayılan 20) ve paralel okunur, kalanı sonraki turlarda adlandırılır. ArgusPad'in Portal indeksleri de aynı şekilde paralel okunur (`ARGUS_CONCURRENCY`).
+
+Holder haritaları senkron sürerken durmaz, kısılır (`HOLDER_MAP_SYNC_CONCURRENCY`, `HOLDER_MAP_SYNC_PASS`). Tamamen durdurmak, senkronu nadiren boş kalan bir kurulumda hiçbir haritanın kurulmaması demekti.
+
+Ölçüm: boş bir veritabanında ilk senkron 91 saniyede tamamlanıyor ve on dört kaynağın hepsi başarılı. Sonraki turlar sürerken en yoğun on tokenin haritası da kendiliğinden hazır hale geldi.
+
 ## Sistem yükü
 
 Tarayıcı kendi sunucumuzdan 15 saniyede bir, yalnızca görünürken okur. Kaynak listeleri ortak backend döngüsünde en az 60 saniye aralıkla alınır; döngüler çakışmaz. Radar launch kataloğu 15 dakika, Tolly ek katalog sayfaları 5 dakika önbellektedir.

@@ -74,3 +74,12 @@ test('a stored snapshot shows the current price, not the one its timeframe was b
  assert.equal(merged.name,'Old','what the snapshot holds of itself is left alone');
  assert.equal(withLiveFigures(null,row),null);
 });
+
+test('a source that never answers cannot hold up the whole sync',async()=>{
+ const started=Date.now();
+ const stuck=new Promise(()=>{});   // never settles, like a request that is accepted and then ignored
+ const {withDeadline}=await import('../src/providers.js');
+ await assert.rejects(()=>withDeadline(stuck,'slowpad',150),/slowpad took longer than/);
+ assert.ok(Date.now()-started<2000,'it gives up quickly rather than waiting on the source');
+ assert.equal(await withDeadline(Promise.resolve('done'),'fastpad',150),'done','a source that answers is untouched');
+});

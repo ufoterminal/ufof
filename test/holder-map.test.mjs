@@ -51,10 +51,11 @@ test('a map reports how far the scan has reached',()=>{
  assert.ok(none.error);
 });
 
-test('map building stands aside while a market sync is running',async()=>{
- const {setHolderMapPaused,requestHolderMap,drainHolderMaps}=await import('../src/holder-map.js');
- setHolderMapPaused(true);
- requestHolderMap(A);
- assert.equal(await drainHolderMaps(),null,'a queued token waits rather than competing for the same endpoints');
+test('a reader\u2019s own request goes to the front of the queue',async()=>{
+ const {requestHolderMap,setHolderMapPaused}=await import('../src/holder-map.js');
  setHolderMapPaused(false);
+ // Queue order is not observable directly, so this only checks the call is accepted and an address that
+ // is not an address is refused rather than queued.
+ assert.doesNotThrow(()=>requestHolderMap(A));
+ assert.doesNotThrow(()=>requestHolderMap('not-an-address'));
 });

@@ -122,7 +122,7 @@ export function clustersFrom(holders,edges){
 async function readRow(token){return (await q('SELECT * FROM holder_maps WHERE token=$1',[token]))[0]||null;}
 
 // One background turn. Returns the row as it now stands so the caller can report progress.
-export async function advanceHolderMap(token){
+export async function advanceHolderMap(token,{concurrency,pass}={}){
  await init();
  const address=String(token||'').toLowerCase();
  if(!/^0x[0-9a-f]{40}$/.test(address))throw Error('Invalid token address');
@@ -157,11 +157,13 @@ export async function advanceHolderMap(token){
  const target=Number(row.head)||head;
  // The windows of this pass, fetched a batch at a time. A window that fails leaves the scan short of the
  // head rather than claiming ground it never read, so the next pass picks it up.
+ const windows=pass??(paused?SYNC_PASS:PASS);
+ const lanes=concurrency??(paused?SYNC_CONCURRENCY:CONCURRENCY);
  const ranges=[];
- for(let i=0;i<PASS&&from<=target;i++){const to=Math.min(target,from+WINDOW-1);ranges.push([from,to]);from=to+1;}
+ for(let i=0;i<windows&&from<=target;i++){const to=Math.min(target,from+WINDOW-1);ranges.push([from,to]);from=to+1;}
  let reached=Number(row.scanned_to);
- for(let i=0;i<ranges.length;i+=CONCURRENCY){
-  const batch=ranges.slice(i,i+CONCURRENCY);
+ for(let i=0;i<ranges.length;i+=lanes){
+  const batch=ranges.slice(i,i+lanes);
   const results=await Promise.all(batch.map(([a,b])=>
    rpc().getLogs({address,event:transfer,fromBlock:BigInt(a),toBlock:BigInt(b)}).then(logs=>logs).catch(()=>null)));
   let ok=true;
@@ -200,8 +202,13 @@ export function shapeMap(row){
 const wanted=[];
 // Map building and the market sync draw on the same endpoints, and a queue of sixteen parallel window
 // reads will starve a sync that is still fetching the token list. Maps wait for the sync to finish.
+// During a market sync the two compete for the same endpoints, so map building drops to a trickle rather
+// than stopping: stopping it outright meant that on a deployment whose sync rarely finishes, no map was
+// ever built at all.
 let paused=true;
 export function setHolderMapPaused(value){paused=!!value;}
+const SYNC_CONCURRENCY=Math.max(1,Math.min(CONCURRENCY,Number(process.env.HOLDER_MAP_SYNC_CONCURRENCY||3)));
+const SYNC_PASS=Math.max(1,Math.min(PASS,Number(process.env.HOLDER_MAP_SYNC_PASS||40)));
 export function requestHolderMap(token){
  const address=String(token||'').toLowerCase();
  if(!/^0x[0-9a-f]{40}$/.test(address))return;
@@ -211,7 +218,6 @@ export function requestHolderMap(token){
  if(at!==0)wanted.unshift(address);
 }
 export async function drainHolderMaps(){
- if(paused)return null;
  const address=wanted[0];
  if(!address)return null;
  try{

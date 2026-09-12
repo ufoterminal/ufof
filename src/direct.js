@@ -1,6 +1,8 @@
 // Public, read-only endpoints verified against each pad's own frontend.
 import {argusRegistry,launchMeta} from './argus.js';
 import {PAD_REGISTRIES,scanPad,padLaunches} from './pad-registry.js';
+// How many unnamed launches are read from their contracts in one pass.
+const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||20)));
 export const feeds = {
   noxa: 'https://api.radardex.pro/tokens?launchpad=noxa&sort=volume24&dir=desc&window=24h&limit=500',
   // ArgusPad market numbers. Membership is decided by the on-chain Portal registry in argus.js;
@@ -48,27 +50,26 @@ export async function ownList(id){
   if(!Array.isArray(payload.tokens))throw Error(PAD_REGISTRIES[id].label+' unexpected token list');
   const registry=await padLaunches(id);
   const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));
-  const withMeta=[];
-  for(const entry of registry){
-   const row={address:entry.token,factory:entry.factory,at:entry.at==null?null:Number(entry.at)};
-   if(listed.has(entry.token)){withMeta.push(row);continue;}
-   const meta=await launchMeta(entry.token).catch(()=>({}));
-   withMeta.push({...row,...meta});
-  }
-  return {...payload,registry:withMeta,mirror:true};
+  const rows=registry.map(entry=>({address:entry.token,factory:entry.factory,at:entry.at==null?null:Number(entry.at)}));
+  // A launch the feed has not picked up is named from its own contract. Reading those one after another
+  // took a sync from seconds to many minutes on a fresh database, so a bounded batch is read in parallel
+  // each pass and the rest are named on later passes.
+  const unnamed=rows.filter(r=>!listed.has(r.address)).slice(0,PAD_META_PER_PASS);
+  const named=await Promise.all(unnamed.map(r=>launchMeta(r.address).catch(()=>({}))));
+  const meta=new Map(unnamed.map((r,i)=>[r.address,named[i]]));
+  return {...payload,registry:rows.map(r=>({...(meta.get(r.address)||{}),...r})),mirror:true};
  }
  if(id==='argus'){
   const [registry,payload]=await Promise.all([argusRegistry(),cachedJson(feeds.argus,60000)]);
   if(!Array.isArray(payload.tokens))throw Error('ArgusPad unexpected token list');
   // A launch the market feed has not picked up yet still belongs on the list: name it from the token contract.
   const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));
-  const withMeta=[];
-  for(const entry of registry){
-   if(listed.has(entry.address)){withMeta.push(entry);continue;}
-   const meta=await launchMeta(entry.address).catch(()=>({}));
-   withMeta.push({...entry,...meta});
-  }
-  return {...payload,registry:withMeta,mirror:true};
+  // Same bound as the other pads: a handful of unnamed launches are read from their contracts per pass,
+  // in parallel, so this never turns one source into a several minute wait.
+  const unnamed=registry.filter(entry=>!listed.has(entry.address)).slice(0,PAD_META_PER_PASS);
+  const named=await Promise.all(unnamed.map(entry=>launchMeta(entry.address).catch(()=>({}))));
+  const meta=new Map(unnamed.map((entry,i)=>[entry.address,named[i]]));
+  return {...payload,registry:registry.map(entry=>({...entry,...(meta.get(entry.address)||{})})),mirror:true};
  }
  if(id==='noxa'){
   const payload=await cachedJson(feeds.noxa,60000);

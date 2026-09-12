@@ -48,10 +48,17 @@ export async function refreshRegistry(reader=chainReader){
   try{
    const count=await reader.count(portal.address);
    if(!Number.isInteger(count)||count<0)throw Error('tokenCount is not a count');
-   for(let i=list.length;i<count;i++){
-    const token=await reader.token(portal.address,i);
-    if(!/^0x[0-9a-f]{40}$/.test(token))throw Error('allTokens('+i+') is not an address');
-    list.push(token);
+   // Indices are read in parallel batches: one at a time turned the first run of this source into a
+   // minute of waiting, which was long enough to be dropped from the sync.
+   const lanes=Math.max(1,Math.min(32,Number(process.env.ARGUS_CONCURRENCY||12)));
+   for(let start=list.length;start<count;start+=lanes){
+    const indices=[];
+    for(let i=start;i<Math.min(count,start+lanes);i++)indices.push(i);
+    const tokens=await Promise.all(indices.map(i=>reader.token(portal.address,i)));
+    for(const token of tokens){
+     if(!/^0x[0-9a-f]{40}$/.test(token))throw Error('allTokens returned something that is not an address');
+     list.push(token);
+    }
    }
   }catch(e){errors[portal.address]=e.shortMessage||e.message;}
  }
