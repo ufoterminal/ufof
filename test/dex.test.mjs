@@ -8,7 +8,12 @@ test('DEX discovery preserves a known launchpad and classifies independent marke
  assert.equal(make({launchpad:'poolstrade'}).metadata.source,'pools-trade');
  assert.equal(make({}).metadata.source,'uniswap');
  assert.deepEqual(make({}).metadata.venues,['uniswap-v3','uniswap-v4']);
- assert.equal(make({launchpad:'unknown-pad'}),undefined);
+ // A pad we have not integrated is kept as the venue it trades on, with its raw tag recorded, rather
+ // than being dropped from the market list.
+ const other=make({launchpad:'unknown-pad'});
+ assert.equal(other.metadata.source,'uniswap');
+ assert.equal(other.metadata.upstream_launchpad,'unknown-pad');
+ assert.equal(other.metadata.launchpad_origin,null,'an unknown tag is never read as one of our pads');
  const dy=make({versions:['v2'],v2Dexes:['dyor'],topVersion:'v2',topDex:'dyor'});
  assert.equal(dy.metadata.source,'dyorswap-v2');assert.equal(dy.metadata.dex_primary,true);
  assert.equal(make({versions:['v2'],v2Dexes:['warp']}),undefined);

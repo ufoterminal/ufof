@@ -6,8 +6,9 @@ export function normalizeDex(payload){
  for(const t of payload.tokens||[]){
   const venues=dexVenues(t);if(!venues.length)continue;
   const tag=String(t.launchpad||(t.launched===true?'radar':'')).toLowerCase();
-  // An unknown launchpad is not evidence of an independent Uniswap launch.
-  if(tag&&!pads[tag])continue;
+  // A pad we have not integrated is still a real market: the pool exists and trades. The row is kept and
+  // attributed to what we can actually verify, the venue, while its raw upstream tag is recorded rather
+  // than being read as one of our own pads.
   const source=pads[tag]||(venues.includes('dyorswap-v2')?'dyorswap-v2':'uniswap');
   const [r]=normalizeDirect('pools-trade',{tokens:[{...t,launchpad:'poolstrade'}]});if(!r)continue;
   rows.push({...r,launchpad_id:source,metadata:{...r.metadata,source,venues,dex_fallback:true,

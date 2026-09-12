@@ -42,6 +42,17 @@ test('the quote side is read from the pool, not assumed to be token0',()=>{
  assert.equal(row.usd_volume,2,'USDC is amount0 when the token is token1');
 });
 
+test('a v2 pair reports four unsigned amounts and prices the trade from what it paid',()=>{
+ const at={blockNumber:1n,logIndex:0,blockTimestamp:'0x64000000',transactionHash:'0x'+'d'.repeat(64)};
+ const buy={args:{amount0In:0n,amount1In:2000000n,amount0Out:1000000000000000000n,amount1Out:0n,to:'0x'+'c'.repeat(40)},...at};
+ const row=decodeSwap(buy,{...pool,version:'v2'},18);
+ assert.equal(row.usd_volume,2,'2 USDC in');
+ assert.equal(row.price,2,'2 USDC for one whole token');
+ assert.equal(row.buy,true);
+ const sell={args:{amount0In:1000000000000000000n,amount1In:0n,amount0Out:0n,amount1Out:2000000n,to:'0x'+'c'.repeat(40)},...at};
+ assert.equal(decodeSwap(sell,{...pool,version:'v2'},18).buy,false,'USDC leaving the pair is a sell');
+});
+
 // Coverage rule: a 24 hour total may only be published when the tape really covers it, or when the token
 // is younger than the tape and every trade it ever had is therefore in hand.
 const whole=(coverage,created,now)=>coverage!=null&&(coverage<=now-86400||(created!=null&&created>=coverage));

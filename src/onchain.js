@@ -16,6 +16,9 @@ import {sqrtPriceToUsd} from './rpc-history.js';
 
 export const V3_FACTORIES=['0xf0db7b58379503491d857db50ac9ece64c653918','0x874dc9d64cd0af61146a68036e9afca7dadd736a'];
 export const V4_POOL_MANAGER='0x8366a39cc670b4001a1121b8f6a443a643e40951';
+// The v2 style factories in use on Arc, each found by asking a live pair which factory built it rather
+// than by trusting a list. They are quiet compared with v3 and v4, but their pairs still trade.
+export const V2_FACTORIES=['0x942bd5bfdc5317c5507e326f8eb4bb6058ab5c10','0x32330c2400a6e0830d56661169ebb6c147e3577a','0x8e79e9e78511544160576f10dbd6ce2c983eb664'];
 const WINDOW=10000;
 // How many history windows one pass reaches back. Higher fills the archive sooner and asks more of the
 // public RPC; the chain is about 20 million blocks, so three windows a minute covers it in roughly a day.
@@ -23,6 +26,11 @@ const BACKFILL=Math.max(0,Math.min(20,Number(process.env.ONCHAIN_BACKFILL||3)));
 
 const poolCreated=parseAbiItem('event PoolCreated(address indexed token0,address indexed token1,uint24 indexed fee,int24 tickSpacing,address pool)');
 const initialize=parseAbiItem('event Initialize(bytes32 indexed id,address indexed currency0,address indexed currency1,uint24 fee,int24 tickSpacing,address hooks,uint160 sqrtPriceX96,int24 tick)');
+// Two shapes are in use on Arc: the standard four argument PairCreated, and a five argument variant
+// emitted by one of the factories. Both name the pair in the first data word, so both are accepted.
+const pairCreated=[parseAbiItem('event PairCreated(address indexed token0,address indexed token1,address pair,uint256 length)'),
+ parseAbiItem('event PairCreated(address indexed token0,address indexed token1,address pair,address deployer,uint256 length)')];
+const v2Swap=parseAbiItem('event Swap(address indexed sender,uint256 amount0In,uint256 amount1In,uint256 amount0Out,uint256 amount1Out,address indexed to)');
 const v3Swap=parseAbiItem('event Swap(address indexed sender,address indexed recipient,int256 amount0,int256 amount1,uint160 sqrtPriceX96,uint128 liquidity,int24 tick)');
 const v4Swap=parseAbiItem('event Swap(bytes32 indexed id,address indexed sender,int128 amount0,int128 amount1,uint160 sqrtPriceX96,uint128 liquidity,int24 tick,uint24 fee)');
 const erc20=parseAbi(['function name() view returns (string)','function symbol() view returns (string)','function decimals() view returns (uint8)','function totalSupply() view returns (uint256)','function balanceOf(address) view returns (uint256)']);
@@ -45,6 +53,7 @@ CREATE INDEX IF NOT EXISTS onchain_trades_token_at ON onchain_trades(token,at);
 CREATE TABLE IF NOT EXISTS onchain_cursor(k TEXT PRIMARY KEY,head BIGINT,oldest BIGINT,updated BIGINT);
 ALTER TABLE onchain_cursor ADD COLUMN IF NOT EXISTS oldest_at BIGINT;`);
 
+const tapeKeys=3;
 const readCursor=async k=>(await q('SELECT head,oldest,oldest_at FROM onchain_cursor WHERE k=$1',[k]))[0]||null;
 const writeCursor=(k,head,oldest,oldestAt=null)=>q(`INSERT INTO onchain_cursor(k,head,oldest,oldest_at,updated) VALUES($1,$2,$3,$4,$5)
  ON CONFLICT(k) DO UPDATE SET head=excluded.head,oldest=excluded.oldest,
@@ -53,7 +62,7 @@ const writeCursor=(k,head,oldest,oldestAt=null)=>q(`INSERT INTO onchain_cursor(k
 export async function tapeCoverage(){
  await init();
  const rows=await q("SELECT oldest_at FROM onchain_cursor WHERE k LIKE 'tape:%' AND oldest_at IS NOT NULL");
- return rows.length<2?null:Math.max(...rows.map(r=>Number(r.oldest_at)));
+ return rows.length<tapeKeys?null:Math.max(...rows.map(r=>Number(r.oldest_at)));
 }
 
 const logTime=log=>{const t=log.blockTimestamp;return t==null?null:Number(typeof t==='string'?BigInt(t):t);};
@@ -79,25 +88,26 @@ export async function discoverPools({head,back=true}={}){
  await init();
  head=head??Number(await rpc().getBlockNumber());
  const found=[];
- for(const [key,address,event] of [
-  ...V3_FACTORIES.map(f=>['v3:'+f,f,poolCreated]),
-  ['v4:'+V4_POOL_MANAGER,V4_POOL_MANAGER,initialize]
+ for(const [key,address,spec] of [
+  ...V3_FACTORIES.map(f=>['v3:'+f,f,{event:poolCreated}]),
+  ...V2_FACTORIES.map(f=>['v2:'+f,f,{events:pairCreated}]),
+  ['v4:'+V4_POOL_MANAGER,V4_POOL_MANAGER,{event:initialize}]
  ]){
   const cursor=await readCursor(key);
   const ranges=plan(cursor,head,{back});
   if(!ranges.length)continue;
   let oldest=cursor?.oldest??ranges[0].from,newest=cursor?.head??head;
   for(const range of ranges){
-   const logs=await rpc().getLogs({address,event,fromBlock:BigInt(range.from),toBlock:BigInt(range.to)});
+   const logs=await rpc().getLogs({address,...spec,fromBlock:BigInt(range.from),toBlock:BigInt(range.to)});
    for(const log of logs){
     if(log.removed)continue;
-    const a=log.args,v4=a.id!=null;
+    const a=log.args,v4=a.id!=null,v2=a.pair!=null;
     const c0=v4?a.currency0:a.token0,c1=v4?a.currency1:a.token1;
     // Only USDC markets: without a quote side in USDC there is no price we could state in dollars.
     if(!isUsdc(c0)&&!isUsdc(c1))continue;
     const token=String(isUsdc(c0)?c1:c0).toLowerCase();
-    found.push({pool:String(v4?a.id:a.pool).toLowerCase(),token,version:v4?'v4':'v3',fee:Number(a.fee),
-     tick_spacing:Number(a.tickSpacing),hooks:v4?String(a.hooks).toLowerCase():null,
+    found.push({pool:String(v4?a.id:(v2?a.pair:a.pool)).toLowerCase(),token,version:v4?'v4':v2?'v2':'v3',
+     fee:v2?null:Number(a.fee),tick_spacing:v2?null:Number(a.tickSpacing),hooks:v4?String(a.hooks).toLowerCase():null,
      token_is_token0:!isUsdc(c0),created_block:Number(log.blockNumber),created_at:logTime(log)});
    }
    oldest=Math.min(oldest,range.from);newest=Math.max(newest,range.to);
@@ -121,15 +131,18 @@ async function savePools(rows){
 // Decoded from the pool's own Swap log. The v4 sign convention is the swapper's, the opposite of v3, so
 // the side is read per version rather than assumed.
 export function decodeSwap(log,pool,decimals){
- const a=log.args,v4=a.id!=null,token0=pool.token_is_token0;
- const quoteRaw=token0?a.amount1:a.amount0, tokenRaw=token0?a.amount0:a.amount1;
+ const a=log.args,v4=a.id!=null,v2=a.amount0In!=null,token0=pool.token_is_token0;
+ // A v2 pair reports four unsigned amounts instead of two signed ones, and carries no price of its own,
+ // so the price is what the trade itself paid.
+ const quoteRaw=v2?(token0?a.amount1In-a.amount1Out:a.amount0In-a.amount0Out):(token0?a.amount1:a.amount0);
+ const tokenRaw=v2?(token0?a.amount0In-a.amount0Out:a.amount1In-a.amount1Out):(token0?a.amount0:a.amount1);
  if(quoteRaw==null||tokenRaw==null||quoteRaw===0n||tokenRaw===0n)return null;
  const quote=Math.abs(Number(quoteRaw))/1e6, amount=Math.abs(Number(tokenRaw))/10**decimals;
- const price=sqrtPriceToUsd(a.sqrtPriceX96,{token0,decimals,quoteDecimals:6});
+ const price=v2?quote/amount:sqrtPriceToUsd(a.sqrtPriceX96,{token0,decimals,quoteDecimals:6});
  if(!(quote>0&&amount>0&&price>0&&Number.isFinite(price)))return null;
  return {pool:pool.pool,token:pool.token,block:Number(log.blockNumber),log_index:Number(log.logIndex),
   at:logTime(log),price,usd_volume:quote,buy:v4?quoteRaw<0n:quoteRaw>0n,
-  trader:v4?null:String(a.recipient||'').toLowerCase()||null,tx:log.transactionHash};
+  trader:v4?null:String(a.recipient||a.to||'').toLowerCase()||null,tx:log.transactionHash};
 }
 
 export async function collectTrades({head,back=true}={}){
@@ -138,7 +151,7 @@ export async function collectTrades({head,back=true}={}){
  const pools=new Map((await q('SELECT p.*,t.decimals FROM onchain_pools p LEFT JOIN onchain_tokens t ON t.address=p.token')).map(p=>[p.pool,p]));
  if(!pools.size)return [];
  const rows=[];
- for(const [key,version] of [['tape:v3','v3'],['tape:v4','v4']]){
+ for(const [key,version] of [['tape:v3','v3'],['tape:v4','v4'],['tape:v2','v2']]){
   const cursor=await readCursor(key);
   const ranges=plan(cursor,head,{back});
   if(!ranges.length)continue;
@@ -146,7 +159,7 @@ export async function collectTrades({head,back=true}={}){
   for(const range of ranges){
    // v4 swaps all come from the one PoolManager. v3 swaps are matched by pool address after the fetch,
    // because one unfiltered query costs less than a filter listing every pool we know.
-   const logs=await rpc().getLogs({...(version==='v4'?{address:V4_POOL_MANAGER,event:v4Swap}:{event:v3Swap}),
+   const logs=await rpc().getLogs({...(version==='v4'?{address:V4_POOL_MANAGER,event:v4Swap}:{event:version==='v2'?v2Swap:v3Swap}),
     fromBlock:BigInt(range.from),toBlock:BigInt(range.to)});
    for(const log of logs){
     if(log.removed)continue;
@@ -201,7 +214,7 @@ export async function readTokenMeta(limit=25){
 export async function readLiquidity(limit=20){
  await init();
  const rows=await q(`SELECT p.pool,p.token,t.decimals FROM onchain_pools p JOIN onchain_tokens t ON t.address=p.token
-  WHERE p.version='v3' AND t.decimals IS NOT NULL
+  WHERE p.version IN ('v2','v3') AND t.decimals IS NOT NULL
   AND EXISTS(SELECT 1 FROM onchain_trades s WHERE s.pool=p.pool AND s.at>$1) LIMIT $2`,[Math.floor(Date.now()/1000)-86400,limit]);
  const out=new Map();
  for(const r of rows){
@@ -251,8 +264,10 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
   const volume=tape.reduce((a,t)=>a+Number(t.usd_volume||0),0);
   const traders=new Set(tape.map(t=>t.trader).filter(Boolean)).size;
   const versions=[...entry.versions];
+  // A venue is only named for the two we can name with certainty. A v2 pair is recorded as v2 without
+  // claiming which exchange's front end it belongs to.
   const m={feed_schema:2,source:'onchain',data_provider:'self',versions,
-   venues:versions.map(v=>'uniswap-'+v),provider_updated_at:now};
+   venues:versions.filter(v=>v!=='v2').map(v=>'uniswap-'+v),provider_updated_at:now};
   // Only what we actually measured. A field we cannot compute is left unset so another source's value
   // is not overwritten with a blank.
   if(last!=null){m.price=last;if(supply>0)m.mcap=last*supply;}
