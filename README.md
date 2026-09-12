@@ -97,6 +97,10 @@ V2/V3/V4 filtreleri yalnızca kaynağın açıkça bildirdiği sürümü kullan�
 - Tutarsız OHLC varsa kapanış fiyatlarıyla çizgi grafik ve görünür uyarı sunulur; hayali mum üretilmez.
 - İstatistikler yalnızca bağlı kaynak kapsamıdır, tüm Arc toplamı değildir. Rakamlar kaynak API'lerinin bildirimidir; bağımsız on-chain denetim garantisi değildir.
 
+## Holders
+
+İşlem listesinin yanında holder listesi var, sekmeyle geçiliyor ve ancak açıldığında yükleniyor. Kaynak sırası şöyle: önce zincir explorer'ının kendi endeksi (`api.arc-scan.org/v1/tokens/{adres}/holders`), çünkü padden bağımsız olarak her tokeni kapsıyor. Bazı tokenlerde sürekli 500 döndüğü için ikinci sırada tokenin kendi padi geliyor (Tolly ve CircleWarp holder yayınlıyor), üçüncü sırada genel bir endeks. Üçü de vermezse liste boş kalır ve panel bunu açıkça söyler, uydurma satır üretilmez.
+
 ## Sistem yükü
 
 Tarayıcı kendi sunucumuzdan 15 saniyede bir, yalnızca görünürken okur. Kaynak listeleri ortak backend döngüsünde en az 60 saniye aralıkla alınır; döngüler çakışmaz. Radar launch kataloğu 15 dakika, Tolly ek katalog sayfaları 5 dakika önbellektedir.

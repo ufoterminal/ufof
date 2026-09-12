@@ -11,3 +11,10 @@
 .search-token b,.search-token small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .search-results .token-icon{width:30px;height:30px;border-radius:8px;font-size:10px}
 .search-results a>.mono{flex:none;margin-left:10px}
+/* Transactions and holders share one panel; the tabs switch which table is shown. */
+.panel-tab{background:none;border:0;padding:0 2px;font:inherit;letter-spacing:inherit;color:var(--muted);cursor:pointer;text-transform:uppercase}
+.panel-tab+.panel-tab{margin-left:16px}
+.panel-tab.active{color:var(--text);border-bottom:2px solid var(--blue);padding-bottom:2px}
+.panel-tab:focus{outline:none}
+.panel-tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+#holders-table td a{color:var(--blue)}

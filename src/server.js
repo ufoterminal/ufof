@@ -7,12 +7,17 @@ import {listMarkets,getMarket,invalidateMarkets} from './market-service.js';
 import {startWorker} from './worker.js';
 import {snapshotStatus} from './snapshots.js';
 import {onchainStatus} from './onchain.js';
+import {tokenHolders} from './holders.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
 let status={syncing:false,lastSync:null,lastError:null,sources:[]};
 const route=fn=>async(req,res)=>{try{await fn(req,res);}catch(e){console.error('[http]',e.message);res.status(500).json({error:e.message});}};
 app.get('/health',(_,res)=>res.json({ok:true,storage,...status}));
 app.get('/api/status',(_,res)=>res.json({chainId:5042,storage,...status}));
+app.get('/api/holders/:address',route(async(req,res)=>{
+ if(!/^0x[0-9a-f]{40}$/i.test(req.params.address))return res.status(400).json({error:'Invalid address'});
+ res.json(await tokenHolders(req.params.address,String(req.query.source||'')));
+}));
 app.get('/api/onchain',route(async(_,res)=>res.json(await onchainStatus())));
 app.get('/api/indexer',route(async(_,res)=>res.json(await snapshotStatus())));
 app.get('/api/markets',route(async(req,res)=>res.json({...await listMarkets(req.query),status})));

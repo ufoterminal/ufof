@@ -66,7 +66,7 @@ document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA'].in
 document.addEventListener('click',e=>{if(!e.target.closest('.searchbox'))$('search-results').hidden=true;});
 let chart,candleSeries,lineSeries,volumeSeries,chartTokenTf=null;
 function detailShell(){
- app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><b>TRANSACTIONS</b><span id="trade-count"></span><span style="margin-left:auto">Most recent · source feed</span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
+ app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><span id="trade-count"></span><span style="margin-left:auto" id="panel-note">Most recent · source feed</span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th><th>LABEL</th></tr></thead><tbody id="holders"><tr><td colspan="5" class="empty">Loading holders…</td></tr></tbody></table></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
  app.addEventListener('click',e=>{const b=e.target.closest('[data-tf]');if(b){tf=b.dataset.tf;history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);document.querySelectorAll('[data-tf]').forEach(x=>x.classList.toggle('active',x===b));loadDetail();}const v=e.target.closest('[data-view]');if(v){viewMode=v.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===v));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}if(e.target.closest('#fit-chart'))chart?.timeScale().fitContent();const copy=e.target.closest('[data-copy]');if(copy)navigator.clipboard.writeText(copy.dataset.copy).then(()=>toast('Address copied')).catch(()=>toast('Copy not available'));const s=e.target.closest('[data-star]');if(s){saveWatch(s.dataset.star);if(currentDetail)paintDetail(currentDetail);}});
 }
 function setupChart(){
@@ -85,7 +85,9 @@ function paintDetail(d){
  $('detail-metrics').innerHTML='<h2 class="details-title">Market overview</h2><div class="metrics">'+[['Price',price(t.price)],['Market cap',usd(t.marketCap)],['Liquidity',usd(t.liquidity)],['24h volume',usd(t.volume)],['24h transactions',count(t.transactions)],['Holders',count(t.holders)]].map(([label,value])=>'<div class="metric"><small>'+label+'</small><b>'+value+'</b></div>').join('')+'</div><div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'+
  '<div class="buy-sell"><span class="up">Buys '+count(t.buys)+'</span><span class="down">Sells '+count(t.sells)+'</span></div>'+(valid(t.buys)&&valid(t.sells)&&t.buys+t.sells>0?'<div class="ratio"><span style="width:'+(t.buys/(t.buys+t.sells)*100)+'%"></span></div>':'')+
  '<div class="facts"><div><span>Launchpad</span><span>'+esc(sourceName(t.source))+'</span></div><div><span>Created</span><span title="'+esc(date(t.createdAt))+'">'+since(t.createdAt)+'</span></div><div><span>Last trade</span><span>'+since(t.lastTradeAt)+'</span></div><div><span>Pool</span><span>'+esc(short(t.pool))+'</span></div><div><span>Updated</span><span>'+since(t.updatedAt)+'</span></div></div><div class="socials">'+[['Website',t.website],['X',t.twitter],['Telegram',t.telegram]].filter(([,url])=>safeUrl(url)).map(([label,url])=>'<a href="'+esc(safeUrl(url))+'" target="_blank" rel="noopener noreferrer">'+label+' ↗</a>').join('')+'</div><a class="all-link" href="https://arc-scan.org/address/'+esc(t.address)+'" target="_blank" rel="noopener">View on Arcscan ↗</a><p class="support-note">Source: '+esc(sourceName(t.source))+'. '+(t.stale?'The list snapshot is older than 3 minutes. ':'')+'Missing figures are not estimated.</p>';
- $('chart-error').textContent=d.cache?.stale?'Showing saved data; background refresh is pending.':d.errors?.chart?'Chart refresh unavailable. Previously loaded candles are retained.':d.errors?.chartNotice||'';
+ // Only a real failure earns a line here. How the candles were assembled, and whether a refresh is still
+ // pending, are not things the reader has to act on, so those notices are not shown.
+ $('chart-error').textContent=d.errors?.chart?'Chart refresh unavailable. Previously loaded candles are retained.':'';
  $('trade-error').textContent=d.errors?.trades?'Transaction refresh unavailable.':'';
  if(window.LightweightCharts){setupChart();if(d.candles.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',minMove=t.price>0?Math.pow(10,Math.floor(Math.log10(t.price))-5):.00000001;
   candleSeries.applyOptions({visible:!closing&&!lineOnly,priceFormat:{type:'custom',formatter:price,minMove}});
@@ -97,14 +99,47 @@ function paintDetail(d){
   const last=closing?d.closes.at(-1):d.candles.at(-1);$('chart-legend').textContent=(closing||lineOnly)?'Close '+price(last.value??last.close)+(valid(last.volume)?'   Vol '+usd(last.volume):''):'O '+price(last.open)+'   H '+price(last.high)+'   L '+price(last.low)+'   C '+price(last.close)+(valid(last.volume)?'   Vol '+usd(last.volume):'');
  }else if(!d.errors?.chart||chartTokenTf!==tf){candleSeries.setData([]);lineSeries.setData([]);volumeSeries.setData([]);$('chart-empty').style.display='grid';$('chart-empty').textContent=d.supported?'No candles available for this timeframe.':'Chart integration is not available for this source yet.';$('chart-legend').textContent='No price history';}}
  else{$('chart-empty').textContent='Chart library could not load. Refresh to retry.';}
- $('trade-count').textContent=d.trades.length+' trades';
+ if(panel==='trades')$('trade-count').textContent=d.trades.length+' trades';
  $('trades').innerHTML=d.trades.map(s=>'<tr><td title="'+esc(date(s.at))+'">'+age(s.at)+' ago</td><td class="'+(s.buy?'up':'down')+'">'+(s.buy?'Buy':'Sell')+'</td><td>'+usd(s.usd_volume)+'</td><td>'+price(s.price)+'</td><td>'+esc(short(s.trader))+'</td><td>'+(/^0x[0-9a-f]{64}$/i.test(s.tx||'')?'<a href="https://arc-scan.org/tx/'+esc(s.tx)+'" target="_blank" rel="noopener">'+esc(short(s.tx))+' ↗</a>':'—')+'</td></tr>').join('')||'<tr><td colspan="6" class="empty">'+(d.errors?.trades?'Could not load recent trades.':'No recent trades returned by this source.')+'</td></tr>';
+}
+// The holders panel is fetched only when it is opened, and only once per token, because the list comes
+// from somebody else's index and does not change by the second.
+let panel='trades',holdersFor=null,holdersController;
+function showPanel(name){
+ panel=name;
+ document.querySelectorAll('[data-panel]').forEach(b=>b.classList.toggle('active',b.dataset.panel===name));
+ const trades=document.querySelector('.trades-table'),holders=$('holders-table');
+ trades.hidden=name!=='trades';holders.hidden=name!=='holders';
+ $('trade-count').textContent=name==='trades'?(currentDetail?currentDetail.trades.length+' trades':''):'';
+ $('panel-note').textContent=name==='trades'?'Most recent \u00b7 source feed':'Largest first';
+ if(name==='holders')loadHolders();
+}
+async function loadHolders(){
+ if(!currentDetail||holdersFor===address)return;
+ holdersFor=address;holdersController?.abort();holdersController=new AbortController();
+ try{
+  const d=await api('/api/holders/'+encodeURIComponent(address)+'?source='+encodeURIComponent(currentDetail.market?.source||''),holdersController);
+  if(panel!=='holders'&&holdersFor!==address)return;
+  $('trade-count').textContent='';
+  if(!d.holders.length){
+   holdersFor=null;   // a failed read should be retried when the tab is opened again
+   $('holders').innerHTML='<tr><td colspan="5" class="empty">Holder list unavailable for this token right now.</td></tr>';return;
+  }
+  if(valid(d.count)&&panel==='holders')$('trade-count').textContent=count(d.count)+' holders';
+  $('holders').innerHTML=d.holders.map((h,i)=>'<tr><td>'+(i+1)+'</td><td><a href="https://arc-scan.org/address/'+esc(h.address)+'" target="_blank" rel="noopener">'+esc(short(h.address))+' \u2197</a></td><td>'+count(h.balance)+'</td><td>'+(valid(h.share)?Number(h.share).toFixed(2)+'%':'\u2014')+'</td><td class="muted">'+esc(h.label||'')+'</td></tr>').join('');
+ }catch(e){
+  if(e.name==='AbortError')return;
+  holdersFor=null;
+  $('holders').innerHTML='<tr><td colspan="5" class="empty">Holder list unavailable right now.</td></tr>';
+ }
 }
 async function loadDetail(){
  const seq=++detailSeq;detailController?.abort();detailController=new AbortController();
  try{const d=await api('/api/market/'+encodeURIComponent(address)+'?tf='+tf,detailController);if(seq!==detailSeq)return;currentDetail=d;paintDetail(d);}
  catch(e){if(e.name==='AbortError')return;$('chart-error').textContent=e.message;if(!currentDetail){$('chart-empty').textContent='Token data is unavailable.';$('detail-metrics').textContent=e.message;}}
 }
-if(address){detailShell();loadDetail();}else{listShell();loadList();}
+if(address){detailShell();loadDetail();
+ app.addEventListener('click',e=>{const b=e.target.closest('[data-panel]');if(b)showPanel(b.dataset.panel);});
+}else{listShell();loadList();}
 setInterval(()=>{if(!document.hidden){if(address)loadDetail();else loadList();}},15000);
 setInterval(()=>{if(!document.hidden&&address&&currentDetail?.cache?.pending)loadDetail();},3000);
