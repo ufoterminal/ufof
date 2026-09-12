@@ -8,6 +8,7 @@ import {startWorker} from './worker.js';
 import {snapshotStatus} from './snapshots.js';
 import {onchainStatus} from './onchain.js';
 import {tokenHolders} from './holders.js';
+import {poolAddresses,V4_POOL_MANAGER} from './onchain.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
 let status={syncing:false,lastSync:null,lastError:null,sources:[]};
@@ -16,7 +17,11 @@ app.get('/health',(_,res)=>res.json({ok:true,storage,...status}));
 app.get('/api/status',(_,res)=>res.json({chainId:5042,storage,...status}));
 app.get('/api/holders/:address',route(async(req,res)=>{
  if(!/^0x[0-9a-f]{40}$/i.test(req.params.address))return res.status(400).json({error:'Invalid address'});
- res.json(await tokenHolders(req.params.address,String(req.query.source||'')));
+ // The pools we know for this token, plus the v4 manager, so the list can mark a market as a market.
+ const pools=[...await poolAddresses(req.params.address).catch(()=>[]),{address:V4_POOL_MANAGER,label:'Pool (Uniswap v4)'}];
+ const extra=String(req.query.pool||'').toLowerCase();
+ if(/^0x[0-9a-f]{40}$/.test(extra))pools.push({address:extra,label:'Pool'});
+ res.json(await tokenHolders(req.params.address,String(req.query.source||''),pools));
 }));
 app.get('/api/onchain',route(async(_,res)=>res.json(await onchainStatus())));
 app.get('/api/indexer',route(async(_,res)=>res.json(await snapshotStatus())));

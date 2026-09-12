@@ -297,6 +297,34 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
  return rows;
 }
 
+// Supply taken out of circulation, read from the chain rather than trusted from a feed. Tokens are burned
+// by sending them where nobody holds the key: the dead address, and sometimes the zero address. Both are
+// counted, and the total supply is read at the same time so the share is consistent with it.
+const BURN_ADDRESSES=['0x000000000000000000000000000000000000dead','0x0000000000000000000000000000000000000000'];
+export async function readBurned(token,decimals,supplyRaw){
+ const address=String(token||'').toLowerCase();
+ if(!/^0x[0-9a-f]{40}$/.test(address))return null;
+ const read=fn=>rpc().readContract({address,abi:erc20,functionName:fn,...(fn==='balanceOf'?{}:{})});
+ const [supply,...balances]=await Promise.all([
+  supplyRaw!=null?Promise.resolve(BigInt(supplyRaw)):read('totalSupply').catch(()=>null),
+  ...BURN_ADDRESSES.map(dead=>rpc().readContract({address,abi:erc20,functionName:'balanceOf',args:[dead]}).catch(()=>null))
+ ]);
+ if(balances.every(b=>b==null))return null;
+ const burnedRaw=balances.reduce((a,b)=>a+(b??0n),0n);
+ const scale=10**Number(decimals??18);
+ const burned=Number(burnedRaw)/scale;
+ const total=supply==null?null:Number(supply)/scale;
+ return {burned,total,percent:total>0?burned/total*100:null,
+  circulating:total==null?null:Math.max(0,total-burned)};
+}
+
+// The addresses that are a market rather than a person, so a holder list can say so.
+export async function poolAddresses(token){
+ await init();
+ const rows=await q("SELECT pool,version FROM onchain_pools WHERE token=$1 AND version<>'v4'",[String(token||'').toLowerCase()]);
+ return rows.map(r=>({address:r.pool,label:'Pool'}));
+}
+
 export async function onchainStatus(){
  await init();
  const coverage=await tapeCoverage();

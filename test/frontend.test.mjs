@@ -30,3 +30,13 @@ test('only a real chart failure is shown as a warning',()=>{
  assert.ok(line&&!line.includes('background refresh is pending'),'a pending refresh is not a warning');
  assert.ok(line&&line.includes('errors?.chart'),'a failed chart refresh is still reported');
 });
+
+test('burned supply has a place in the market overview',()=>{
+ assert.ok(terminal.includes("'Burned supply'"),'the metric is rendered');
+ assert.ok(terminal.includes('t.burnedPercent'),'its share of supply is shown when known');
+});
+
+test('the chart can be shown as price or as market cap',()=>{
+ assert.ok(terminal.includes('data-scale="price"')&&terminal.includes('data-scale="mc"'),'both buttons exist');
+ assert.ok(terminal.includes('t.marketCap/t.price'),'supply comes from the row itself, so the chart agrees with the overview');
+});

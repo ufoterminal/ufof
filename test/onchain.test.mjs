@@ -64,3 +64,16 @@ test('totals wait until the tape can back them up',()=>{
  assert.equal(whole(now-3600,now-1800,now),true,'token younger than the tape: we hold all of its trades');
  assert.equal(whole(now-90000,now-500000,now),true,'tape older than a day covers any token');
 });
+
+// Holder labels: a market and a burn address must not read as ordinary wallets.
+import {labelPools} from '../src/holders.js';
+test('pools and burn addresses are named in a holder list',()=>{
+ const dead='0x000000000000000000000000000000000000dead', zero='0x'+'0'.repeat(40);
+ const poolAddress='0x'+'a'.repeat(40), wallet='0x'+'b'.repeat(40);
+ const rows=labelPools([{address:dead},{address:zero},{address:poolAddress},{address:wallet}],[{address:poolAddress,label:'Pool'}]);
+ assert.deepEqual(rows.map(r=>r.label),['Burned','Burned','Pool',null]);
+});
+test('a label the source already supplied is kept',()=>{
+ const [row]=labelPools([{address:'0x'+'c'.repeat(40),label:'Treasury'}],[]);
+ assert.equal(row.label,'Treasury');
+});

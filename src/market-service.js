@@ -5,6 +5,7 @@ import {SOURCES} from '../public/sources.js';
 import {dexMarkets} from './dex-markets.js';
 import {persistRecords} from './providers.js';
 import {requestSnapshot,readSnapshot,initSnapshots} from './snapshots.js';
+import {readBurned} from './onchain.js';
 let snapshot=null,until=0,inflight=null;
 const searches=new Map();
 const sources=new Set(Object.keys(SOURCES));
@@ -103,6 +104,14 @@ export async function buildMarket(address,tf='1h'){
    remote={...remote,...generated,errors:{...remote.errors,chart:generated.candles.length?null:remote.errors?.chart,chartNotice:generated.notice}};
   }catch(e){remote={...remote,candles:[],closes:[],errors:{...remote.errors,chart:'Local chart engine: '+e.message}};}
  }
+ // Burned supply is read from the token itself rather than taken from a feed, so it is present whatever
+ // source the rest of the row came from. A failed read leaves it unknown instead of implying zero.
+ try{
+  const burn=await readBurned(market.address,row.decimals,row.total_supply);
+  // Dust left at a burn address is not a burn. Below a whole token it reads as "0 · 0.00%", which says
+  // less than showing nothing at all.
+  if(burn&&burn.burned>=1){market.burned=burn.burned;market.burnedPercent=burn.percent;market.circulating=burn.circulating;}
+ }catch{/* the panel simply omits it */}
  const trades=remote?.trades||[];
  if(trades[0]?.at)market.lastTradeAt=validTime(trades[0].at)||market.lastTradeAt;
  // The visible price and chart close must refer to the same recorded stream.

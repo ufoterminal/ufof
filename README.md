@@ -97,9 +97,17 @@ V2/V3/V4 filtreleri yalnızca kaynağın açıkça bildirdiği sürümü kullan�
 - Tutarsız OHLC varsa kapanış fiyatlarıyla çizgi grafik ve görünür uyarı sunulur; hayali mum üretilmez.
 - İstatistikler yalnızca bağlı kaynak kapsamıdır, tüm Arc toplamı değildir. Rakamlar kaynak API'lerinin bildirimidir; bağımsız on-chain denetim garantisi değildir.
 
+## Grafik ölçeği
+
+Grafiğin üstünde Price ve MC düğmeleri var. MC'ye basınca mumlar, çizgi, eksen ve imleç okuması market değerine döner. Çarpan satırın kendi rakamlarından çıkar, market cap bölü fiyat, yani grafik ile Market overview asla çelişmez. Tokenin arzını gösteren bir rakam yoksa ölçek fiyatta kalır ve bunun sebebi yazılır. Seçim adreste taşınır (`?scale=mc`), sayfa yenilenince korunur.
+
+## Yakılan arz
+
+Market overview'da yakılan arz gösterilir. Zincirden okunur, besleme verisine güvenilmez: yakma adreslerinin (`0x...dead` ve sıfır adresi) bakiyeleri ve toplam arz aynı anda okunup miktar ve yüzde çıkarılır. ARGUS'ta 35,7 milyon ve %3,57 okundu. Okuma başarısız olursa alan bilinmiyor kalır, sıfır yazılmaz. Yakma adresinde bir tam tokenden az toz kalmışsa bu bir yakma sayılmaz ve gösterilmez, çünkü ekranda "0 · 0.00%" olarak görünür ve hiçbir şey anlatmaz.
+
 ## Holders
 
-İşlem listesinin yanında holder listesi var, sekmeyle geçiliyor ve ancak açıldığında yükleniyor. Kaynak sırası şöyle: önce zincir explorer'ının kendi endeksi (`api.arc-scan.org/v1/tokens/{adres}/holders`), çünkü padden bağımsız olarak her tokeni kapsıyor. Bazı tokenlerde sürekli 500 döndüğü için ikinci sırada tokenin kendi padi geliyor (Tolly ve CircleWarp holder yayınlıyor), üçüncü sırada genel bir endeks. Üçü de vermezse liste boş kalır ve panel bunu açıkça söyler, uydurma satır üretilmez.
+İşlem listesinin yanında holder listesi var, sekmeyle geçiliyor ve ancak açıldığında yükleniyor. Kaynak sırası şöyle: önce zincir explorer'ının kendi endeksi (`api.arc-scan.org/v1/tokens/{adres}/holders`), çünkü padden bağımsız olarak her tokeni kapsıyor. Bazı tokenlerde sürekli 500 döndüğü için ikinci sırada tokenin kendi padi geliyor (Tolly ve CircleWarp holder yayınlıyor), üçüncü sırada genel bir endeks. Üçü de vermezse liste boş kalır ve panel bunu açıkça söyler, uydurma satır üretilmez. Listede cüzdan olmayan adresler etiketlenir: indekslediğimiz v2/v3 havuzları ve v4 PoolManager "Pool", yakma adresleri "Burned" olarak işaretlenir, böylece en büyük holder sanılmazlar.
 
 ## Sistem yükü
 

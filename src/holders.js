@@ -49,26 +49,36 @@ function fromPad(json,source){
  return rows.length?{holders:rows,count:json?.holderCount??null,provider:source}:null;
 }
 
-export async function tokenHolders(address,source){
+// Addresses that are a market, not a person. The v4 PoolManager holds every v4 pool's tokens, so it is
+// always one of these; v2 and v3 pools are their own addresses and come from what we indexed.
+// The two addresses tokens are burned to hold supply nobody can spend, so they are named as such rather
+// than appearing as the token's largest anonymous holder.
+const BURN_LABELS={'0x000000000000000000000000000000000000dead':'Burned','0x0000000000000000000000000000000000000000':'Burned'};
+export function labelPools(rows,pools=[]){
+ const known=new Map(pools.filter(p=>p&&p.address).map(p=>[String(p.address).toLowerCase(),p.label||'Pool']));
+ return rows.map(h=>({...h,label:BURN_LABELS[h.address]||known.get(h.address)||h.label||null}));
+}
+
+export async function tokenHolders(address,source,pools=[]){
  const token=String(address||'').toLowerCase();
  if(!/^0x[0-9a-f]{40}$/.test(token))throw Error('Invalid token address');
  const errors={};
  try{
   const found=fromExplorer(await cachedJson(EXPLORER+token+'/holders?limit=50',120000));
-  if(found)return {...found,holders:found.holders.slice(0,50)};
+  if(found)return {...found,holders:labelPools(found.holders.slice(0,50),pools)};
   errors.explorer='no holders returned';
  }catch(e){errors.explorer=e.message;}
  const url=padHolders[source];
  if(url){
   try{
    const found=fromPad(await cachedJson(url(token),120000),source);
-   if(found)return {...found,holders:found.holders.slice(0,50),errors};
+   if(found)return {...found,holders:labelPools(found.holders.slice(0,50),pools),errors};
    errors.source='no holders returned';
   }catch(e){errors.source=e.message;}
  }
  try{
   const found=fromPad(await cachedJson(generalHolders(token),120000),'radardex');
-  if(found)return {...found,holders:found.holders.slice(0,50),errors};
+  if(found)return {...found,holders:labelPools(found.holders.slice(0,50),pools),errors};
   errors.general='no holders returned';
  }catch(e){errors.general=e.message;}
  return {holders:[],count:null,provider:null,errors};

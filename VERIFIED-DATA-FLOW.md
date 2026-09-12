@@ -105,3 +105,7 @@ Markets whose upstream launchpad tag is not one we have integrated are no longer
 Holder lists come from the chain explorer's own balance index first, which covers every token regardless of pad, then from the token's pad, then from a general index. Measured: TOLLY, WARP, ARGUS and SHARCFUN were served by the explorer with holder counts of 1,269, 1,089, 404 and 513; ACAT and BARC returned a persistent internal error there and were served by the fallback with 284 and 495. When no source answers, the panel says the list is unavailable instead of showing anything invented.
 
 The chart no longer carries an informational banner. How the candles were assembled, and whether a background refresh is still pending, are not things the reader acts on; only a failed chart refresh is reported.
+
+Burned supply is read from the token contract, not taken from a feed: the balances of the dead and zero addresses are summed against total supply. ARGUS read 35,684,189 burned, 3.57 percent, against RadarDEX's reported 3.5. In the holder list the pools we indexed and the v4 PoolManager are tagged Pool, and the burn addresses are tagged Burned, so neither reads as the token's largest wallet.
+
+The detail chart can be read as price or as market cap. The multiplier is the row's own market cap divided by its price, so the chart cannot disagree with the overview beside it. Checked on BARC: price candles closed at $0.000263226 and the same candles in market cap mode closed at $262.75K against a reported market cap of $262.75K.
