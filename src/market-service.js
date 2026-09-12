@@ -2,12 +2,10 @@ import {q} from './db.js';
 import {number,directDetail} from './direct.js';
 import {ownChart} from './chart-engine.js';
 import {SOURCES} from '../public/sources.js';
-import {dexMarkets} from './dex-markets.js';
 import {persistRecords} from './providers.js';
 import {requestSnapshot,readSnapshot,initSnapshots} from './snapshots.js';
 import {readBurned} from './onchain.js';
 let snapshot=null,until=0,inflight=null;
-const searches=new Map();
 const sources=new Set(Object.keys(SOURCES));
 const validTime=v=>{const n=number(v);return n>0&&n<=Date.now()/1000+60?n:null;};
 const finiteArray=a=>Array.isArray(a)?a.map(number).filter(n=>n!=null&&n>=0):[];
@@ -71,12 +69,8 @@ export function selectMarkets(all,options={},now=Math.floor(Date.now()/1000)){
 }
 export async function listMarkets(options={}){
  const query=String(options.q||'').trim().slice(0,100);
- // Search returns our local archive immediately. Remote discovery is bounded
- // and happens outside the response path; subsequent searches see its result.
- if(query.length>=2&&!searches.has(query)&&searches.size<4){
-  const task=dexMarkets(query).then(async rows=>{if(rows.length){await persistRecords(rows);invalidateMarkets();}}).catch(()=>{}).finally(()=>{setTimeout(()=>searches.delete(query),30000).unref();});
-  searches.set(query,task);
- }
+ // Search reads what we hold. There is no remote discovery step any more: everything in the list came
+ // from our own reading of the chain or from a pad's own API, so there is nothing further to ask.
  return selectMarkets(await allMarkets(),options);
 }
 // The first contract to carry a ticker. A symbol is not unique on chain, so being the oldest one is

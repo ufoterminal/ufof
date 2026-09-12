@@ -75,6 +75,18 @@ ArgusPad token listesi yayınlamıyor; launch listesi Portal kontratlarında dur
 
 Arama sonuçlarında token logosu gösterilir. Logosu olmayan veya resmi yüklenmeyen tokende iki harfli işaret kalır.
 
+## Bağımlılıklar
+
+DYOR beslemesi ve RadarDex'in Uniswap keşif sayfaları kaldırıldı. Uniswap v2/v3/v4 piyasaları artık yalnızca kendi fabrika taramamızdan geliyor; başka bir screener'ın sayfalaması yavaşladığında veya kapandığında listenin omurgası etkilenmiyor. Arama da yalnızca elimizdekini okuyor, dışarıya keşif isteği atmıyor.
+
+Kalan dış bağlantılar: her padin kendi API'si (Tolly, Sharc, CircleWarp, Archemist, pools.trade, RadarDex kendi padi için), zincir uçları ve holder listesi için explorer. Padin kendi verisini padin kendisinden almak zaten doğru olan.
+
+## Token metadatası
+
+Logo ve sosyal hesaplar öncelikle zincirden okunur. Bazı padler launch olayına bir metadata bağlantısı koyuyor; long.supply'da bu bir IPFS belgesi ve içinde ad, açıklama, görsel, web sitesi, Twitter ve Telegram var. `src/token-metadata.js` bu bağlantıyı olayın kendisinden çıkarır (olayın imzasını bilmeye gerek kalmadan, veri içindeki stringleri okuyarak), belgeyi bir IPFS geçidinden alır ve saklar. ipfs:// bağlantıları tarayıcının açabileceği hale getirilir, http bağlantıları olduğu gibi bırakılır, web bağlantısı olmayan hiçbir şey kabul edilmez.
+
+Zincirde metadata bulunmayan tokende alan boş kalır ve padin kendi API'sinden gelen değer kullanılır. Ölçüm: ilk turlarda bakılan 106 launch'ın 64'ünde zincirden logo ve bağlantı çıktı.
+
 ## Kendi verimiz
 
 `src/onchain.js` listeyi başka bir screener'a sormadan kurar. Keşif fabrikalardan gelir: Uniswap v3 fabrikası (`0xf0db7b58...3918`, ayrıca aynı bytecode'a sahip `0x874dc9d6...d736a`) `PoolCreated`, v4 PoolManager (`0x8366a39c...0951`) `Initialize`, üç v2 fabrikası (`0x942bd5bf...5c10`, `0x32330c24...577a`, `0x8e79e9e7...b664`) `PairCreated` yayınlar. v2 fabrikaları canlı bir havuza hangi fabrikanın kurduğu sorularak bulundu; ikisi standart dört argümanlı imzayı, biri beş argümanlı bir varyantı kullanıyor, ikisi de kabul ediliyor. v2 çiftleri kendi fiyatlarını taşımadığı için fiyat işlemin ödediği tutardan çıkarılır. USDC çiftli havuzlar alınır, yani bir token için USDC havuzu açıldığı anda listeye girer; hangi pad çıkarmış olduğuna bakılmaz. Fiyat, hacim, işlem sayısı, alış/satış kırılımı ve 5m/1h/6h/24h değişimleri o havuzun `Swap` loglarından kendi tuttuğumuz kayıttan hesaplanır. Ad, sembol, ondalık ve arz doğrudan token kontratından okunur.

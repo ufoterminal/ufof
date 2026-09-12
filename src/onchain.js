@@ -13,6 +13,7 @@ import {createPublicClient,fallback,http,parseAbi,parseAbiItem} from 'viem';
 import {q} from './db.js';
 import {RPC_HTTP,USDC} from './config.js';
 import {sqrtPriceToUsd} from './rpc-history.js';
+import {chainMetadata} from './token-metadata.js';
 
 export const V3_FACTORIES=['0xf0db7b58379503491d857db50ac9ece64c653918','0x874dc9d64cd0af61146a68036e9afca7dadd736a'];
 export const V4_POOL_MANAGER='0x8366a39cc670b4001a1121b8f6a443a643e40951';
@@ -240,6 +241,7 @@ const changeFrom=(trades,now,seconds,last)=>{
 export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
  await init();
  const coverage=await tapeCoverage();
+ const links=await chainMetadata().catch(()=>new Map());
  const [pools,tokens,trades,liquidity]=await Promise.all([
   q('SELECT token,version,MIN(created_at) AS created_at,COUNT(*)::int AS pools FROM onchain_pools GROUP BY token,version'),
   q('SELECT * FROM onchain_tokens'),
@@ -293,6 +295,16 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
    m.last_trade_at=Number(tape[tape.length-1].at);
   }
   if(liquidity.has(token))m.liquidity=liquidity.get(token);
+  // The token's own picture and links, published by whoever launched it, preferred over anything a third
+  // party says about it. Absent on chain, these stay unset and a pad's own API can still fill them.
+  const published=links.get(token);
+  if(published){
+   if(published.logo)m.logo=published.logo;
+   if(published.website)m.website=published.website;
+   if(published.twitter)m.twitter=published.twitter;
+   if(published.telegram)m.telegram=published.telegram;
+   if(published.description)m.description=published.description;
+  }
   rows.push({address:token,name:info.name||'',symbol:info.symbol||'',decimals:Number(info.decimals),
    total_supply:info.total_supply==null?null:String(info.total_supply),
    creation_at:entry.created,launchpad_id:'onchain',factory:null,metadata:m});

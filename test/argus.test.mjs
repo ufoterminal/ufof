@@ -4,7 +4,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ARGUS_PORTALS,refreshRegistry,resetRegistry,registryState} from '../src/argus.js';
 import {normalizeDirect} from '../src/direct.js';
-import {normalizeDex} from '../src/dex-markets.js';
 import {SOURCES} from '../public/sources.js';
 import {icon} from '../public/ui-utils.js';
 
@@ -69,10 +68,8 @@ test('no registry means no ArgusPad rows', ()=>{
  assert.throws(()=>normalizeDirect('argus',{tokens:[{address:inRegistry,launchpad:'argus'}]}),/registry missing/);
 });
 
-test('ArgusPad is a known source for the list, search fallback and labels', ()=>{
+test('ArgusPad is a known source with a label of its own', ()=>{
  assert.equal(SOURCES.argus.label,'ArgusPad');
- const [row]=normalizeDex({tokens:[{address:inRegistry,launchpad:'argus',symbol:'ARG',versions:['v4']}]});
- assert.equal(row.metadata.source,'argus','previously an unknown tag and dropped');
 });
 
 test('search rows carry the logo, with a letter mark fallback', ()=>{

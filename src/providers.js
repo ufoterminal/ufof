@@ -1,7 +1,6 @@
 import {cachedJson,feeds,normalizeDirect,ownList} from './direct.js';
 import {q} from './db.js';
 import {ADDR} from './config.js';
-import {dexMarkets} from './dex-markets.js';
 import {onchainSync,onchainMarkets} from './onchain.js';
 const lower=x=>String(x||'').toLowerCase();
 const addr=x=>ADDR.test(String(x||''))?lower(x):null;
@@ -22,13 +21,9 @@ export function normalizeRadarArchive(launchJson){
  const launches=Array.isArray(launchJson?.launches)?launchJson.launches:Array.isArray(launchJson?.data)?launchJson.data:[];
  return launches.map(l=>{const address=addr(pick(l,'token','address','tokenAddress','contractAddress'));if(!address)return null;return {address,name:String(pick(l,'name')||''),symbol:String(pick(l,'symbol')||''),decimals:null,total_supply:null,creation_at:null,launchpad_id:'radardex',factory:addr(pick(l,'factory')),metadata:{catalog_schema:2,archive_source:'radardex',archived:true}}}).filter(Boolean);
 }
-export function normalizeDyor(json,now=Math.floor(Date.now()/1000)){
- if(Number(json?.chainId)!==5042||String(json?.chain||'arc').toLowerCase()!=='arc')throw Error('DYOR response is not Arc 5042');
- return (Array.isArray(json.items)?json.items:Array.isArray(json.data)?json.data:[]).map(x=>{const address=addr(pick(x,'token','address','tokenAddress'));if(!address)return null;return {address,name:String(x.name||''),symbol:String(x.symbol||''),decimals:null,total_supply:null,creation_at:unix(x.created_at),launchpad_id:'dyor',factory:addr(x.factory),metadata:{feed_schema:2,source:'dyor',token_created_at:unix(x.created_at),last_trade_at:unix(x.lastTradeAt),price:finite(x.marketCapEth)!=null?finite(x.marketCapEth)/1e6/1e9:null,mcap:finite(x.marketCapEth)!=null?finite(x.marketCapEth)/1e6:null,liquidity:finite(x.liquidityEth)!=null?finite(x.liquidityEth)/1e6:null,volume24h:finite(x.volume24hWei)!=null?finite(x.volume24hWei)/1e6:null,txns24h:null,traders24h:null,holders:null,buys24h:null,sells24h:null,changes:{'5m':null,'1h':null,'6h':null,'24h':null},pool:x.pool,versions:['v3'],logo:safeUrl(x.image),website:safeUrl(x.website),twitter:safeUrl(x.x),telegram:safeUrl(x.telegram),description:String(x.description||'').slice(0,2000),provider_updated_at:now}}}).filter(Boolean);
-}
-// One unresponsive source used to hold up the entire sync, and with it the market list, for as long as it
-// took. Every source now runs against a deadline: whatever has not answered in time is reported as failed
-// for this round and the rest of the sync carries on.
+// One unresponsive source used to hold up the entire sync, and with it the market list. Every source runs
+// against a deadline: whatever has not answered in time is reported as failed for this round and the rest
+// of the sync carries on.
 const SOURCE_TIMEOUT=Math.max(5000,Math.min(600000,Number(process.env.SOURCE_TIMEOUT_MS||90000)));
 export function withDeadline(promise,label,ms=SOURCE_TIMEOUT){
  let timer;
@@ -38,9 +33,10 @@ export function withDeadline(promise,label,ms=SOURCE_TIMEOUT){
 
 export async function syncExternal(){
  const now=Math.floor(Date.now()/1000);const out=[];let status=[];
- try{const rows=await dexMarkets();out.push(...rows);status.push({id:'uniswap',ok:true,count:rows.filter(r=>r.metadata.venues.some(v=>v.startsWith('uniswap'))).length,mode:'market-index'});status.push({id:'dyorswap-v2',ok:true,count:rows.filter(r=>r.metadata.venues.includes('dyorswap-v2')).length,mode:'market-index'});}catch(e){status.push({id:'uniswap',ok:false,error:e.message},{id:'dyorswap-v2',ok:false,error:e.message});}
+ // Uniswap markets are no longer discovered through another screener's version pages. Our own reading
+ // of the pool factories covers the same ground and does not go dark when somebody else's API does.
  try{const [l,m]=await Promise.all([cachedJson('https://api.radardex.pro/launches?limit=all',900000),cachedJson(feeds.radardex)]);const rows=normalizeRadar(l,m,now);out.push(...rows,...normalizeRadarArchive(l));status.push({id:'radardex',ok:true,count:rows.length,archive_count:normalizeRadarArchive(l).length,market_page:(m.tokens||m.data||m.items||[]).length,total_markets:m.count||null,updated_at:now})}catch(e){status.push({id:'radardex',ok:false,error:e.message,updated_at:now})}
- try{const d=await ownList('dyor');const rows=normalizeDyor(d,now);out.push(...rows);status.push({id:'dyor',ok:true,count:rows.length,pages:d.pagination_pages||1,updated_at:now})}catch(e){status.push({id:'dyor',ok:false,error:e.message,updated_at:now})}
+ // The DYOR feed has been dropped: its markets arrive through our own discovery like any other.
  // Our own reading of the chain. It runs last so that where we measured a number ourselves it is the
  // one shown, while logos, socials and pad attribution from the feeds above are left untouched.
  try{const progress=await withDeadline(onchainSync(),'on-chain sync');const rows=await onchainMarkets(now);out.push(...rows);
@@ -55,7 +51,7 @@ export async function persistRecords(records){
  for(const original of records){
   const r={...original,metadata:{...(original.metadata?.feed_schema===2&&!original.metadata.dex_fallback?{dex_fallback:false,chart_provider:null}:{}),...original.metadata}};
   const previous=unique.get(r.address);
-  if(previous){const primary=previous.metadata.dex_primary&&r.metadata.source==='dyor';
+  if(previous){const primary=false;
    const metadata=primary?{...r.metadata,...previous.metadata}:{...previous.metadata,...r.metadata};
    metadata.venues=[...new Set([...(previous.metadata.venues||[]),...(r.metadata.venues||[])])];
    metadata.versions=[...new Set([...(previous.metadata.versions||[]),...(r.metadata.versions||[])])];

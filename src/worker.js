@@ -3,6 +3,7 @@ import {buildMarket} from './market-service.js';
 import {frames,requestSnapshot,claimJob,finishJob,publishSnapshot,initSnapshots} from './snapshots.js';
 import {drainHolderMaps,seedHolderMaps} from './holder-map.js';
 import {scanPadsInBackground} from './pad-registry.js';
+import {readPadMetadata} from './token-metadata.js';
 import {refreshRegistryInBackground} from './argus.js';
 let stopped=false;
 export async function seedJobs(){
@@ -36,7 +37,7 @@ export function startWorker(){
  }
  // The chain-backed pad registries, kept out of the sync path.
  async function registries(){
-  try{await scanPadsInBackground();await refreshRegistryInBackground();}catch(e){console.error('[registries]',e.message);}
+  try{await scanPadsInBackground();await refreshRegistryInBackground();await readPadMetadata();}catch(e){console.error('[registries]',e.message);}
   later(registries,15000);
  }
  registries();
