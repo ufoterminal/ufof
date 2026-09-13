@@ -81,10 +81,9 @@ test('the market row is trimmed to fit a laptop screen without sideways scrollin
 
 test('retired sources keep their name but are not offered as a filter',async()=>{
  const {SOURCES}=await import('../public/sources.js');
- assert.equal(SOURCES['dyorswap-v2'].retired,true);
- assert.equal(SOURCES.dyor.retired,true);
+ assert.equal(SOURCES['dyorswap-v2'].retired,true,'the venue we no longer read is kept out of the filter');
  assert.ok(terminal.includes('filter(([,s])=>!s.retired)'),'the dropdown leaves them out');
- assert.ok(SOURCES.dyor.label==='DYOR','a row saved under an old source still reads as a name');
+ assert.ok(!SOURCES.dyor.retired,'DYOR is read from its factory again, so it is offered');
 });
 
 test('an address that is not a listed token is offered as a wallet',()=>{
@@ -103,4 +102,10 @@ test('search results are ranked by what a token is worth, not its unit price',()
  const line=terminal.split('\n').find(l=>l.includes("search-results').innerHTML=asWallet"));
  assert.ok(line.includes('valid(t.marketCap)?usd(t.marketCap)'),'market cap is shown');
  assert.ok(!line.includes('price(t.price)'),'the unit price is not');
+});
+
+test('the open candle carries the price the header shows',()=>{
+ assert.ok(terminal.includes('function withLivePrice('),'the helper exists');
+ assert.ok(terminal.includes('withLivePrice(d.candles,t.price,TIMEFRAME_SECONDS[tf])'),'it is applied per timeframe');
+ assert.ok(terminal.includes('candleSeries.setData((closing?[]:live)'),'the chart draws the adjusted series');
 });

@@ -1,8 +1,9 @@
 // Public, read-only endpoints verified against each pad's own frontend.
 import {knownRegistry,launchMeta} from './argus.js';
 import {PAD_REGISTRIES,padLaunches} from './pad-registry.js';
+import {knownNames} from './onchain.js';
 // How many unnamed launches are read from their contracts in one pass.
-const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||20)));
+const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||8)));
 export const feeds = {
   noxa: 'https://api.radardex.pro/tokens?launchpad=noxa&sort=volume24&dir=desc&window=24h&limit=500',
   // ArgusPad market numbers. Membership is decided by the on-chain Portal registry in argus.js;
@@ -46,18 +47,23 @@ export const number=x=>x==null||x===''||!Number.isFinite(Number(x))?null:Number(
 const unix=x=>{if(x==null||x==='')return null;const n=typeof x==='string'&&!/^\d+(?:\.\d+)?$/.test(x)?Date.parse(x):Number(x);return Number.isFinite(n)?Math.floor(n>1e12?n/1000:n):null};
 export async function ownList(id){
  if(PAD_REGISTRIES[id]){
-  // The registry is filled by a background task; a sync only reads it.
-  const payload=await cachedJson(feeds[id],60000);
-  if(!Array.isArray(payload.tokens))throw Error(PAD_REGISTRIES[id].label+' unexpected token list');
+  // The registry is filled by a background task; a sync only reads it. A pad's market feed is optional:
+  // when it is missing or unusable the pad still lists its launches, and their prices and volumes come
+  // from our own reading of the chain like any other token's.
+  const feed=feeds[id]?await cachedJson(feeds[id],60000).catch(()=>null):null;
+  const payload=Array.isArray(feed?.tokens)?feed:{tokens:[]};
   const registry=await padLaunches(id);
   const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));
   const rows=registry.map(entry=>({address:entry.token,factory:entry.factory,at:entry.at==null?null:Number(entry.at)}));
   // A launch the feed has not picked up is named from its own contract. Reading those one after another
   // took a sync from seconds to many minutes on a fresh database, so a bounded batch is read in parallel
   // each pass and the rest are named on later passes.
-  const unnamed=rows.filter(r=>!listed.has(r.address)).slice(0,PAD_META_PER_PASS);
-  const named=await Promise.all(unnamed.map(r=>launchMeta(r.address).catch(()=>({}))));
-  const meta=new Map(unnamed.map((r,i)=>[r.address,named[i]]));
+  // Whatever our own indexing already named costs nothing to reuse.
+  const meta=await knownNames(rows.map(r=>r.address)).catch(()=>new Map());
+  const unnamed=rows.filter(r=>!listed.has(r.address)&&!meta.get(r.address)?.symbol).slice(0,PAD_META_PER_PASS);
+  // The rest are read one token at a time. Reading a batch together meant dozens of calls in flight at
+  // once, which the endpoints answer badly enough to hang the whole source.
+  for(const r of unnamed)meta.set(r.address,await launchMeta(r.address).catch(()=>({})));
   return {...payload,registry:rows.map(r=>({...(meta.get(r.address)||{}),...r})),mirror:true};
  }
  if(id==='argus'){
@@ -179,6 +185,10 @@ export function normalizeDirect(id,json,now=Math.floor(Date.now()/1000)){
    const seen=new Set(rows.map(r=>r.address));
    for(const [address,r] of registry){
     if(seen.has(address))continue;
+    // A launch whose name has not been read from its contract yet is held back rather than listed as a
+    // blank row; the naming pass is bounded, and a pad with thousands of launches would otherwise fill
+    // the list with rows that say nothing.
+    if(!String(r.symbol||'').trim())continue;
     // Launched on chain, no market numbers yet. Unknown, never zero.
     rows.push({address,name:String(r.name||''),symbol:String(r.symbol||''),decimals:number(r.decimals),total_supply:null,
      creation_at:r.at??null,launchpad_id:id,factory:r.factory,

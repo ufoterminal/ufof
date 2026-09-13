@@ -26,6 +26,16 @@ export const PAD_REGISTRIES={
   feed:'https://api.radardex.pro/tokens?launchpad=long&sort=volume24&dir=desc&window=24h&limit=500',
   tag:'long'
  },
+ dyor:{
+  label:'DYOR',
+  // Two factories, each announcing a launch with its own event. The current one is first.
+  factories:['0x80b42aed46d73f47119dc444bea28a9e68f32bf4','0xdfef2f90f7e52609cc89b80b68ff6a1c86c4ddc4'],
+  topic:['0x8f8815afd174b9556e4ef54fbb59bb79d5c567fa89760ac9409682fb9459bfad',
+   '0xb03c53b28e78a88e31607a27e1fa48234dce28d5d9d9ec7b295aeb02e674a1e1'],
+  // No market feed: DYOR's launches are listed from the factory and priced from our own chain reading.
+  feed:null,
+  tag:'dyor'
+ },
  o1:{
   label:'o1',
   factories:['0xee3e862efde6dcd6df5648af0e2731b9d1df4605'],
@@ -61,7 +71,9 @@ export function launchesFromLogs(logs,pad,factory,topic0){
   // The event is matched here rather than in the request: the node returned every log of the factory
   // whatever topic filter was asked for, and a factory emits several kinds of event per launch. Reading
   // the wrong one put pool addresses and even USDC into the registry.
-  if(topic0&&String(log.topics?.[0]).toLowerCase()!==topic0.toLowerCase())continue;
+  // A pad may announce launches with more than one event, so the match accepts a list.
+  const wanted=topic0==null?null:(Array.isArray(topic0)?topic0:[topic0]).map(t=>String(t).toLowerCase());
+  if(wanted&&!wanted.includes(String(log.topics?.[0]).toLowerCase()))continue;
   const topic=log.topics?.[1];
   if(!topic)continue;
   const token='0x'+String(topic).slice(26).toLowerCase();
@@ -79,7 +91,7 @@ export async function scanPad(id,{head}={}){
  const found=[];
  for(const factory of pad.factories){
   // The event is part of the key, so correcting which event is read rescans instead of trusting old rows.
-  const key=id+':'+factory+':'+pad.topic.slice(0,10);
+  const key=id+':'+factory+':'+String(Array.isArray(pad.topic)?pad.topic[0]:pad.topic).slice(0,10);
   const cursor=await readCursor(key);
   // Forward from the last checkpoint, and backwards through history until the factory's own start.
   const ranges=[];
@@ -98,7 +110,8 @@ export async function scanPad(id,{head}={}){
    // node, so every log of the factory came back: correct once filtered here, but heavy enough that a
    // full history scan crawled. Filtered at the node it is a few records per window.
    const results=await Promise.all(batch.map(([a,b])=>rpc().request({method:'eth_getLogs',
-    params:[{address:factory,topics:[pad.topic],fromBlock:numberToHex(a),toBlock:numberToHex(b)}]}).catch(()=>null)));
+    params:[{address:factory,topics:[Array.isArray(pad.topic)?pad.topic:[pad.topic]],
+     fromBlock:numberToHex(a),toBlock:numberToHex(b)}]}).catch(()=>null)));
    for(let j=0;j<batch.length;j++){
     if(results[j]==null)continue;   // a window that failed is simply not marked as read
     found.push(...launchesFromLogs(results[j],id,factory,pad.topic));

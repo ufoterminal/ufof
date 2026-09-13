@@ -20,11 +20,8 @@ test('Warp daily volume pages past the first 100 trades and excludes old or dupl
  globalThis.fetch=async()=>({ok:true,json:async()=>({trades:++calls===1?first:[first[0],{id:'new',ts:now*1000,usdc:3},{id:'old',ts:(now-86401)*1000,usdc:900}],total:103})});
  try{assert.deepEqual(await warpDaily({address:'0x'+'f'.repeat(40)},now),{volume24h:203,txns24h:101});assert.equal(calls,2);}finally{globalThis.fetch=original;}
 });
-test('DYOR list follows stable cursors without refetching the head',async()=>{
- const original=globalThis.fetch,calls=[];
- globalThis.fetch=async url=>{calls.push(String(url));return {ok:true,json:async()=>String(url).includes('cursor=7')?{items:[{token:'0x'+'2'.repeat(40),symbol:'TWO'}],nextCursor:null}:{chain:'arc',chainId:5042,items:[{token:'0x'+'1'.repeat(40),symbol:'ONE'}],nextCursor:7}}};
- try{const d=await ownList('dyor');assert.equal(d.items.length,2);assert.equal(d.pagination_pages,2);assert.equal(calls.length,2);assert.match(calls[1],/cursor=7/);}finally{globalThis.fetch=original;}
-});
+// DYOR is no longer read through its own paginated API: its launches come from its factory on chain,
+// so there is no cursor walk left to test. What replaces it is covered in pad-registry.test.mjs.
 test('DYOR trades become source-faithful OHLCV candles',()=>{
  const rows=candlesFromTrades([
   {at:1202,buy:true,price:2.25,usd_volume:2},{at:1201,buy:true,price:2.5,usd_volume:1},

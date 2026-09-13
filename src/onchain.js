@@ -337,6 +337,16 @@ export async function readBurned(token,decimals,supplyRaw){
 // The market we would read a token's history from, taken from our own discovery rather than from a feed.
 // The busiest pool wins; a v4 pool comes with the key material its reader needs, so v4 tokens are covered
 // as well as v2 and v3.
+// Names we already read from token contracts while indexing. A pad's launch list can use these straight
+// away instead of asking the chain again one token at a time.
+export async function knownNames(addresses){
+ await init();
+ const list=[...new Set((addresses||[]).map(a=>String(a||'').toLowerCase()))].filter(a=>/^0x[0-9a-f]{40}$/.test(a));
+ if(!list.length)return new Map();
+ const rows=await q('SELECT address,name,symbol,decimals FROM onchain_tokens WHERE address=ANY($1::text[]) AND decimals IS NOT NULL',[list]);
+ return new Map(rows.map(r=>[r.address,{name:r.name||'',symbol:r.symbol||'',decimals:Number(r.decimals)}]));
+}
+
 export async function bestPool(token){
  await init();
  const address=String(token||'').toLowerCase();

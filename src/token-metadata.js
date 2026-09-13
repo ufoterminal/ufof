@@ -95,20 +95,68 @@ async function launchUri(pad,token,block){
  return null;
 }
 
+// A token whose pad we do not read still published something when it launched. The block its pool was
+// created in is the one place we know to look without searching the chain: whatever was announced in that
+// block is read, and any metadata link naming this token is taken. Pads that record nothing simply yield
+// nothing, and the token keeps whatever its own pad's API provides.
+async function blockUri(token,block){
+ if(block==null)return null;
+ const logs=await rpc().request({method:'eth_getLogs',
+  params:[{fromBlock:numberToHex(Number(block)),toBlock:numberToHex(Number(block))}]}).catch(()=>null);
+ if(!Array.isArray(logs))return null;
+ const mine=logs.filter(l=>{
+  const topics=(l.topics||[]).slice(1).map(t=>'0x'+String(t).slice(26).toLowerCase());
+  return String(l.address).toLowerCase()===token||topics.includes(token)||String(l.data||'').toLowerCase().includes(token.slice(2));
+ });
+ for(const log of mine){
+  const uri=metadataUri(stringsInData(log.data));
+  if(uri)return uri;
+ }
+ return null;
+}
+
 // One pass: take a few launches we have not looked at yet and record what their metadata says.
 export async function readPadMetadata(limit=BATCH){
  await init();
  const pending=await q(`SELECT l.pad,l.token,l.block FROM pad_launches l
   LEFT JOIN token_metadata m ON m.token=l.token
-  WHERE m.token IS NULL ORDER BY l.block DESC LIMIT $1`,[limit]);
+  WHERE m.token IS NULL ORDER BY l.block DESC LIMIT $1
+ `,[limit]);
  if(!pending.length)return 0;
  const now=Math.floor(Date.now()/1000);
  const rows=await Promise.all(pending.map(async entry=>{
-  const uri=await launchUri(entry.pad,entry.token,entry.block).catch(()=>null);
+  const uri=await launchUri(entry.pad,entry.token,entry.block).catch(()=>null)
+   ??await blockUri(entry.token,entry.block).catch(()=>null);
   const meta=uri?await fetchMetadata(uri).catch(()=>null):null;
   return {token:entry.token,uri:uri||null,...(meta||{logo:null,website:null,twitter:null,telegram:null,description:null}),
    read_at:now,missing:!meta};
  }));
+ await q(`INSERT INTO token_metadata(token,uri,logo,website,twitter,telegram,description,read_at,missing)
+  SELECT token,uri,logo,website,twitter,telegram,description,read_at,missing FROM jsonb_to_recordset($1::jsonb)
+  AS x(token text,uri text,logo text,website text,twitter text,telegram text,description text,read_at bigint,missing boolean)
+  ON CONFLICT(token) DO UPDATE SET uri=excluded.uri,logo=excluded.logo,website=excluded.website,
+   twitter=excluded.twitter,telegram=excluded.telegram,description=excluded.description,
+   read_at=excluded.read_at,missing=excluded.missing`,[JSON.stringify(rows)]);
+ return rows.filter(r=>!r.missing).length;
+}
+
+// The same look, for tokens we found through pool discovery rather than through a pad's factory.
+export async function readDiscoveredMetadata(limit=BATCH){
+ await init();
+ const pending=await q(`SELECT p.token,MIN(p.created_block) AS block FROM onchain_pools p
+  LEFT JOIN token_metadata m ON m.token=p.token
+  LEFT JOIN pad_launches l ON l.token=p.token
+  WHERE m.token IS NULL AND l.token IS NULL AND p.created_block IS NOT NULL
+  GROUP BY p.token ORDER BY MIN(p.created_block) DESC LIMIT $1`,[limit]);
+ if(!pending.length)return 0;
+ const now=Math.floor(Date.now()/1000);
+ const rows=[];
+ for(const entry of pending){
+  const uri=await blockUri(entry.token,entry.block).catch(()=>null);
+  const meta=uri?await fetchMetadata(uri).catch(()=>null):null;
+  rows.push({token:entry.token,uri:uri||null,...(meta||{logo:null,website:null,twitter:null,telegram:null,description:null}),
+   read_at:now,missing:!meta});
+ }
  await q(`INSERT INTO token_metadata(token,uri,logo,website,twitter,telegram,description,read_at,missing)
   SELECT token,uri,logo,website,twitter,telegram,description,read_at,missing FROM jsonb_to_recordset($1::jsonb)
   AS x(token text,uri text,logo text,website text,twitter text,telegram text,description text,read_at bigint,missing boolean)

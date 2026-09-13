@@ -77,17 +77,26 @@ Arama sonuçlarında token logosu ve market değeri gösterilir. Birim fiyat yer
 
 ## Bağımlılıklar
 
+DYOR artık kendi API'siyle değil zincirdeki fabrikasından okunuyor: `0x80b42aed...2bf4` (güncel) ve `0xdfef2f90...ddc4` (eski), her biri kendi launch olayıyla. Tarama 4.163 launch buldu. Bu padin piyasa beslemesi hiç kullanılmıyor; fiyat, hacim ve işlem sayısı kendi zincir okumamızdan geliyor, besleme yalnızca aidiyet için bile gerekmiyor. Bir padin beslemesi olmayabilir, kod bunu artık normal bir durum olarak kabul ediyor.
+
+Launch adları önce kendi indekslediğimiz token tablosundan alınır, orada yoksa tur başına sınırlı sayıda kontrattan okunur. Adı henüz bilinmeyen launch listeye girmez, boş satır göstermeyiz.
+
+
 Kaldırılan kaynaklar filtre listesinde görünmez ama isimleri kayıtlı kalır: eski turlarda o kaynakla kaydedilmiş bir satır ham kimlik yerine düzgün adıyla okunur. Filtreye koymanın anlamı olmazdı, çünkü seçilse yalnızca artık tazelenmeyen eski kayıtları gösterirdi.
 
 DYOR beslemesi ve RadarDex'in Uniswap keşif sayfaları kaldırıldı. Uniswap v2/v3/v4 piyasaları artık yalnızca kendi fabrika taramamızdan geliyor; başka bir screener'ın sayfalaması yavaşladığında veya kapandığında listenin omurgası etkilenmiyor. Arama da yalnızca elimizdekini okuyor, dışarıya keşif isteği atmıyor.
 
 Kalan dış bağlantılar: her padin kendi API'si (Tolly, Sharc, CircleWarp, Archemist, pools.trade, RadarDex kendi padi için), zincir uçları ve holder listesi için explorer. Padin kendi verisini padin kendisinden almak zaten doğru olan.
 
+## Fiyat tutarlılığı (grafik)
+
+Devam eden mum, başlıkta gösterilen canlı fiyatla kapanır. Öncesinde grafiğin son mumu kaydedilmiş anlık görüntüden geliyordu ve her zaman diliminin görüntüsü kendi anında hazırlandığı için hem başlıkla hem birbirleriyle çelişiyordu; MC ölçeği fiyattan türediği için fark orada da görünüyordu. Yalnızca henüz kapanmamış mum düzeltilir, o da zaten gösterdiğimiz fiyata. Ölçüm: LONG ve ARGUS'ta 1h ve 1d mum kapanışı Market overview'daki market değeriyle birebir aynı.
+
 ## Token metadatası
 
 Logo ve sosyal hesaplar öncelikle zincirden okunur. Bazı padler launch olayına bir metadata bağlantısı koyuyor; long.supply'da bu bir IPFS belgesi ve içinde ad, açıklama, görsel, web sitesi, Twitter ve Telegram var. `src/token-metadata.js` bu bağlantıyı olayın kendisinden çıkarır (olayın imzasını bilmeye gerek kalmadan, veri içindeki stringleri okuyarak), belgeyi bir IPFS geçidinden alır ve saklar. ipfs:// bağlantıları tarayıcının açabileceği hale getirilir, http bağlantıları olduğu gibi bırakılır, web bağlantısı olmayan hiçbir şey kabul edilmez.
 
-Zincirde metadata bulunmayan tokende alan boş kalır ve padin kendi API'sinden gelen değer kullanılır. Ölçüm: ilk turlarda bakılan 106 launch'ın 64'ünde zincirden logo ve bağlantı çıktı.
+Padin fabrikası bilinmeyen tokenlerde de bakılır: havuzun açıldığı bloktaki loglar okunur ve o tokeni adlandıran bir metadata bağlantısı varsa alınır. Zincirde metadata bulunmayan tokende alan boş kalır ve padin kendi API'sinden gelen değer kullanılır. Ölçüm: ilk turlarda bakılan 106 launch'ın 64'ünde zincirden logo ve bağlantı çıktı.
 
 ## Kendi verimiz
 

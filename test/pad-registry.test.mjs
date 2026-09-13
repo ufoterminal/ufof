@@ -25,11 +25,12 @@ test('an event without a usable address in that position is dropped',()=>{
  assert.deepEqual(launchesFromLogs([zero,noTopic,removed],'o1',FACTORY,TOPIC),[]);
 });
 
-test('both pads are configured with a factory, an event and a feed',()=>{
+test('every chain-backed pad names a factory and its launch event',()=>{
  for(const [id,cfg] of Object.entries(PAD_REGISTRIES)){
   assert.ok(cfg.factories.length&&cfg.factories.every(f=>/^0x[0-9a-f]{40}$/.test(f)),id+' names its factory');
-  assert.ok(/^0x[0-9a-f]{64}$/.test(cfg.topic),id+' names the launch event');
-  assert.ok(cfg.feed.startsWith('https://'),id+' has a market feed');
+  const topics=Array.isArray(cfg.topic)?cfg.topic:[cfg.topic];
+ assert.ok(topics.length&&topics.every(t=>/^0x[0-9a-f]{64}$/.test(t)),id+' names the launch event, or several');
+  assert.ok(cfg.feed===null||String(cfg.feed).startsWith('https://'),id+' either names a market feed or declares it has none');
   assert.ok(cfg.tag&&cfg.label,id+' has a tag and a label');
  }
 });

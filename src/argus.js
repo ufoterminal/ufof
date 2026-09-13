@@ -24,15 +24,24 @@ let client;
 // Arc refuses JSON-RPC batching (-32600), so every transport is created with batching off.
 // Ranked like the other chain readers: these lookups sit inside a sync, and the endpoints differ enough in
 // latency that the unranked order was slow enough to miss the sync's deadline.
-const rpc=()=>client??=createPublicClient({transport:fallback(
- RPC_HTTP.map(url=>http(url,{batch:false,timeout:8000,retryCount:0})),
- {rank:{interval:60000,sampleCount:3,timeout:2000}})});
+// Each endpoint is its own client and they are tried in order. A fallback transport takes a JSON-RPC
+// error as a real answer and stops, and its latency ranking probes proved able to leave a read hanging;
+// both failure modes silently stopped a source here.
+const readers=RPC_HTTP.map(url=>createPublicClient({transport:http(url,{batch:false,timeout:8000,retryCount:0})}));
+async function anywhere(method,args){
+ let last;
+ for(const reader of readers){
+  try{return await reader[method](args);}catch(e){last=e;}
+ }
+ throw last||Error('No endpoint answered');
+}
+const rpc=()=>client??=readers[0];
 
 export const chainReader={
- count:async portal=>Number(await rpc().readContract({address:portal,abi:portalAbi,functionName:'tokenCount'})),
- token:async(portal,index)=>String(await rpc().readContract({address:portal,abi:portalAbi,functionName:'allTokens',args:[BigInt(index)]})).toLowerCase(),
+ count:async portal=>Number(await anywhere('readContract',{address:portal,abi:portalAbi,functionName:'tokenCount'})),
+ token:async(portal,index)=>String(await anywhere('readContract',{address:portal,abi:portalAbi,functionName:'allTokens',args:[BigInt(index)]})).toLowerCase(),
  meta:async token=>{
-  const read=fn=>rpc().readContract({address:token,abi:erc20Abi,functionName:fn}).catch(()=>null);
+  const read=fn=>anywhere('readContract',{address:token,abi:erc20Abi,functionName:fn}).catch(()=>null);
   const [name,symbol,decimals]=await Promise.all([read('name'),read('symbol'),read('decimals')]);
   return {name:name==null?'':String(name),symbol:symbol==null?'':String(symbol),decimals:decimals==null?null:Number(decimals)};
  }
@@ -101,8 +110,15 @@ export async function argusRegistry({ttl=60000,reader=chainReader}={}){
 // Name and symbol for a launch the market feed has not picked up yet. Read once per token.
 export async function launchMeta(token,reader=chainReader){
  if(metaCache.has(token))return metaCache.get(token);
- const meta=await reader.meta(token);
- if(meta.symbol||meta.name)metaCache.set(token,meta);
+ // A contract that answers nowhere would otherwise be retried on every pass, and with three endpoints to
+ // time out against it can hold a source for a minute at a time. One attempt, bounded, and the miss is
+ // remembered so the next pass moves on to other launches.
+ const deadline=new Promise((_,reject)=>setTimeout(()=>reject(Error('Token metadata read timed out')),
+  Math.max(1000,Number(process.env.LAUNCH_META_TIMEOUT_MS||6000))).unref?.());
+ let meta;
+ try{meta=await Promise.race([reader.meta(token),deadline]);}
+ catch{meta={name:'',symbol:'',decimals:null};}
+ metaCache.set(token,meta);
  return meta;
 }
 

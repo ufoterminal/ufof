@@ -42,7 +42,7 @@ export async function syncExternal(){
  try{const progress=await withDeadline(onchainSync(),'on-chain sync');const rows=await onchainMarkets(now);out.push(...rows);
   status.push({id:'onchain',ok:true,count:rows.length,mode:'self-indexed',head:progress.head,new_pools:progress.pools,new_trades:progress.trades});
  }catch(e){status.push({id:'onchain',ok:false,error:e.shortMessage||e.message});}
- for(const id of ['tolly','sharc','circlewarp','archemist','pools-trade','noxa','argus','long','o1']){try{const payload=await withDeadline(ownList(id),id),rows=normalizeDirect(id,payload,now);out.push(...rows);status.push({id,ok:true,count:rows.length,mode:payload.mirror?'live-mirror':'live'})}catch(e){status.push({id,ok:false,error:e.message})}}
+ for(const id of ['tolly','sharc','circlewarp','archemist','pools-trade','noxa','argus','long','o1','dyor']){try{const payload=await withDeadline(ownList(id),id),rows=normalizeDirect(id,payload,now);out.push(...rows);status.push({id,ok:true,count:rows.length,mode:payload.mirror?'live-mirror':'live'})}catch(e){status.push({id,ok:false,error:e.message})}}
  await persistRecords(out);
  return status;
 }

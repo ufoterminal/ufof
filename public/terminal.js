@@ -94,6 +94,21 @@ function chartScale(t){
  return supply>0?{factor:supply,format:usd,label:'Market cap'}:{factor:1,format:price,label:'Price',unavailable:true};
 }
 
+// The newest candle is still open: it covers a period that has not ended, and the price shown beside it is
+// the latest the market reported. A stored snapshot is built a moment behind, so without this the header
+// and the chart disagreed, and differed again on every timeframe because each snapshot is prepared at its
+// own moment. Only the open candle is touched, and only to the price we are already showing.
+function withLivePrice(candles,price,seconds){
+ if(!candles.length||!valid(price)||!(price>0))return candles;
+ const last=candles[candles.length-1];
+ const open=seconds?last.bucket+seconds>Math.floor(Date.now()/1000):true;
+ if(!open)return candles;
+ const rest=candles.slice(0,-1);
+ return [...rest,{...last,close:price,high:Math.max(last.high,price),low:Math.min(last.low,price)}];
+}
+
+const TIMEFRAME_SECONDS={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
+
 function paintDetail(d){
  const t=d.market;document.title=(t.symbol||'Token')+' · UFO Screener';
  $('token-heading').innerHTML='<a class="back" href="/" aria-label="Back to markets">←</a>'+icon(t)+'<div><h1>'+esc(t.symbol)+(t.originalTicker?'<span class="og-tag" title="The oldest contract we have indexed under this ticker">OG</span>':'')+'</h1><span class="muted">'+esc(t.name)+'</span></div><span class="source-badge">'+esc(sourceName(t.source))+'</span><strong class="head-price">'+price(t.price)+'</strong><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span><div class="contract">'+star(t.address)+'<span>'+esc(short(t.address))+'</span><button class="icon-btn" data-copy="'+esc(t.address)+'" aria-label="Copy contract address">⧉</button></div>';
@@ -107,14 +122,15 @@ function paintDetail(d){
  if(window.LightweightCharts){setupChart();
  const scale=chartScale(t),k=scale.factor,fmt=scale.format;
  document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x.dataset.scale===scaleMode));
- if(d.candles.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',base=t.price>0?t.price*k:0,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
+ const live=withLivePrice(d.candles,t.price,TIMEFRAME_SECONDS[tf]);
+ if(live.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',base=t.price>0?t.price*k:0,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
   candleSeries.applyOptions({visible:!closing&&!lineOnly,priceFormat:{type:'custom',formatter:fmt,minMove}});
   lineSeries.applyOptions({visible:closing||lineOnly,color:'#7caaff',priceFormat:{type:'custom',formatter:fmt,minMove}});
-  lineSeries.setData(closing?(d.closes||[]).map(c=>({time:c.bucket,value:c.value*k})):(lineOnly?d.candles.map(c=>({time:c.bucket,value:c.close*k})):[]));
-  candleSeries.setData((closing?[]:d.candles).map(c=>({time:c.bucket,open:c.open*k,high:c.high*k,low:c.low*k,close:c.close*k})));
+  lineSeries.setData(closing?(d.closes||[]).map(c=>({time:c.bucket,value:c.value*k})):(lineOnly?live.map(c=>({time:c.bucket,value:c.close*k})):[]));
+  candleSeries.setData((closing?[]:live).map(c=>({time:c.bucket,open:c.open*k,high:c.high*k,low:c.low*k,close:c.close*k})));
   volumeSeries.setData((closing?d.closes:d.candles).filter(c=>valid(c.volume)&&c.volume>=0).map(c=>({time:c.bucket,value:c.volume,color:closing?'#36588280':c.close>=c.open?'#23856c65':'#af435665'})));
   if(chartTokenTf!==tf){chart.timeScale().fitContent();const bars=closing?d.closes.length:d.candles.length;if(bars>120)chart.timeScale().setVisibleLogicalRange({from:bars-120,to:bars+3});chartTokenTf=tf;}$('chart-empty').style.display='none';
-  const last=closing?d.closes.at(-1):d.candles.at(-1);$('chart-legend').textContent=(closing||lineOnly)?scale.label+' '+fmt((last.value??last.close)*k)+(valid(last.volume)?'   Vol '+usd(last.volume):''):'O '+fmt(last.open*k)+'   H '+fmt(last.high*k)+'   L '+fmt(last.low*k)+'   C '+fmt(last.close*k)+(valid(last.volume)?'   Vol '+usd(last.volume):'');
+  const last=closing?d.closes.at(-1):live.at(-1);$('chart-legend').textContent=(closing||lineOnly)?scale.label+' '+fmt((last.value??last.close)*k)+(valid(last.volume)?'   Vol '+usd(last.volume):''):'O '+fmt(last.open*k)+'   H '+fmt(last.high*k)+'   L '+fmt(last.low*k)+'   C '+fmt(last.close*k)+(valid(last.volume)?'   Vol '+usd(last.volume):'');
   if(scale.unavailable)$('chart-error').textContent='Market cap needs a supply figure this token has not reported; showing price.';
  }else if(!d.errors?.chart||chartTokenTf!==tf){candleSeries.setData([]);lineSeries.setData([]);volumeSeries.setData([]);$('chart-empty').style.display='grid';$('chart-empty').textContent=d.supported?'No candles available for this timeframe.':'Chart integration is not available for this source yet.';$('chart-legend').textContent='No price history';}}
  else{$('chart-empty').textContent='Chart library could not load. Refresh to retry.';}

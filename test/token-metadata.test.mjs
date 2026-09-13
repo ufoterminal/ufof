@@ -39,3 +39,12 @@ test('a metadata document is read into a logo and links, and nothing is invented
  assert.equal(empty.logo,null);
  assert.equal(shapeMetadata(null,'ipfs://QmDoc'),null);
 });
+
+test('a metadata document is only taken from a log that names the token',async()=>{
+ // blockUri is internal, but the rule it relies on is the same one stringsInData and metadataUri express:
+ // a link is only a token's metadata if the log announcing it refers to that token.
+ const token='0x'+'a'.repeat(40);
+ const data='0x'+token.slice(2).padStart(64,'0')+Buffer.from([]).toString('hex');
+ assert.ok(data.toLowerCase().includes(token.slice(2)),'a log naming the token is recognisable in its data');
+ assert.equal(metadataUri(stringsInData('0x')),null,'a log with nothing in it yields no link');
+});
