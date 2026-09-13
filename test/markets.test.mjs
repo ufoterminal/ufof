@@ -92,3 +92,10 @@ test('a search puts the biggest market first, but an exact match still leads',()
  const exact=selectMarkets(all,{q:all[0].address},now).rows;
  assert.equal(exact[0].address,all[0].address,'an address match still comes first whatever it is worth');
 });
+
+test('a token with no symbol is still a row, ranked like any other',()=>{
+ const all=[token(1,{symbol:'AAA',volume:100}),token(2,{symbol:'',name:'',volume:5000})];
+ const rows=selectMarkets(all,{},now).rows;
+ assert.equal(rows.length,2,'an unnamed token is not dropped from the list');
+ assert.equal(rows[0].volume,5000,'the list ranks by trading, not by whether we have read its name yet');
+});

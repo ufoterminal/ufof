@@ -5,6 +5,7 @@ import {SOURCES} from '../public/sources.js';
 import {persistRecords} from './providers.js';
 import {requestSnapshot,readSnapshot,publishSnapshot,initSnapshots} from './snapshots.js';
 import {readBurned} from './onchain.js';
+import {launchMeta} from './argus.js';
 let snapshot=null,until=0,inflight=null;
 const sources=new Set(Object.keys(SOURCES));
 const validTime=v=>{const n=number(v);return n>0&&n<=Date.now()/1000+60?n:null;};
@@ -165,8 +166,20 @@ function refreshDetail(address,tf){
 export async function getMarket(address,tf='1h'){
  if(!/^0x[0-9a-f]{40}$/i.test(address)||!['1m','5m','15m','1h','4h','1d'].includes(tf))throw Error('Invalid market request');
  address=address.toLowerCase();
- const row=(await q('SELECT t.*,l.launchpad_id FROM tokens t LEFT JOIN launches l ON l.token=t.address WHERE t.address=$1',[address]))[0];
+ let row=(await q('SELECT t.*,l.launchpad_id FROM tokens t LEFT JOIN launches l ON l.token=t.address WHERE t.address=$1',[address]))[0];
  if(!row)return null;
+ // A token nothing has described yet is named here, once. Naming runs in the background newest first, so
+ // an older launch could sit unnamed for a long time: it could not be found by its name and it sorted to
+ // the bottom of every list, which reads as the token being missing rather than merely unlabelled.
+ if(!String(row.symbol||'').trim()){
+  const meta=await launchMeta(address).catch(()=>null);
+  if(meta?.symbol){
+   await q('UPDATE tokens SET name=$2,symbol=$3,decimals=COALESCE(decimals,$4) WHERE address=$1',
+    [address,meta.name||'',meta.symbol,meta.decimals??null]).catch(()=>null);
+   row={...row,name:meta.name||row.name,symbol:meta.symbol,decimals:row.decimals??meta.decimals??null};
+   invalidateMarkets();
+  }
+ }
  await requestSnapshot(address,tf,10);
  const saved=await readSnapshot(address,tf);
  // A snapshot older than a few seconds is rebuilt here rather than served as it stands. It was only ever

@@ -358,23 +358,27 @@ const v2Factory=parseAbi(['function getPair(address,address) view returns (addre
 const FEES=[100,500,3000,10000];
 const ZERO='0x0000000000000000000000000000000000000000';
 
-export async function findPoolsFor(tokens,{limit=12}={}){
+const POOL_LOOKUP=Math.max(1,Math.min(400,Number(process.env.POOL_LOOKUP_PER_PASS||60)));
+
+export async function findPoolsFor(tokens,{limit=POOL_LOOKUP}={}){
  await init();
  const found=[];
  for(const token of tokens.slice(0,limit)){
-  for(const factory of V3_FACTORIES){
-   for(const fee of FEES){
-    const pool=await rpc().readContract({address:factory,abi:v3Factory,functionName:'getPool',args:[token,USDC,fee]}).catch(()=>null);
-    if(!pool||String(pool).toLowerCase()===ZERO)continue;
-    found.push({pool:String(pool).toLowerCase(),token,version:'v3',fee,tick_spacing:null,hooks:null,
-     token_is_token0:token<USDC,created_block:null,created_at:null});
-   }
-  }
-  for(const factory of V2_FACTORIES){
-   const pair=await rpc().readContract({address:factory,abi:v2Factory,functionName:'getPair',args:[token,USDC]}).catch(()=>null);
-   if(!pair||String(pair).toLowerCase()===ZERO)continue;
-   found.push({pool:String(pair).toLowerCase(),token,version:'v2',fee:null,tick_spacing:null,hooks:null,
-    token_is_token0:token<USDC,created_block:null,created_at:null});
+  // One token's questions go out together: which fee tiers exist on each v3 factory, and whether a v2 pair
+  // exists. A pad's back catalogue is thousands of tokens, and asking these one at a time was the
+  // difference between a list filling in minutes and filling in hours.
+  const asks=[
+   ...V3_FACTORIES.flatMap(factory=>FEES.map(fee=>
+    rpc().readContract({address:factory,abi:v3Factory,functionName:'getPool',args:[token,USDC,fee]})
+     .then(pool=>({pool,version:'v3',fee})).catch(()=>null))),
+   ...V2_FACTORIES.map(factory=>
+    rpc().readContract({address:factory,abi:v2Factory,functionName:'getPair',args:[token,USDC]})
+     .then(pool=>({pool,version:'v2',fee:null})).catch(()=>null))
+  ];
+  for(const hit of await Promise.all(asks)){
+   if(!hit?.pool||String(hit.pool).toLowerCase()===ZERO)continue;
+   found.push({pool:String(hit.pool).toLowerCase(),token,version:hit.version,fee:hit.fee,
+    tick_spacing:null,hooks:null,token_is_token0:token<USDC,created_block:null,created_at:null});
   }
  }
  if(found.length)await savePools(found);
@@ -382,7 +386,7 @@ export async function findPoolsFor(tokens,{limit=12}={}){
 }
 
 // Launches and tokens we hold that have no pool recorded yet, newest first.
-export async function tokensMissingPools(limit=12){
+export async function tokensMissingPools(limit=POOL_LOOKUP){
  await init();
  const rows=await q(`SELECT l.token,MAX(l.block) AS block FROM pad_launches l
   LEFT JOIN onchain_pools p ON p.token=l.token

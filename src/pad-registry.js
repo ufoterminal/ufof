@@ -28,30 +28,30 @@ export const PAD_REGISTRIES={
  },
  tolly:{label:'Tolly',factories:['0xcad7ee36ac193bf2eddb7b3e2736c5bdb8269c8b'],
   topic:['0xdefd84618a4d1aceaf28aa60244fec2d00fa75f65b7243abd1c965cc80881b9a',
-   '0x875522b092d9e19a1de359e4bd218090d582fa521c9733889acf1a5ff1941255'],feed:null,tag:'tolly'},
+   '0x875522b092d9e19a1de359e4bd218090d582fa521c9733889acf1a5ff1941255'],feed:'https://api.tollylabs.com/tokens?scope=ours&sort=volume&dir=desc&limit=500&offset=0',tag:'tolly',shape:'own'},
  sharc:{label:'Sharc',
   factories:['0x38650a04f6d9db1f068c697c903d9fe494b3e4b1','0xacda46258bc2d3450a4e1dc1485eafa0e53784f9','0x2b2b76d365c76a9226d436746746bcf62cdf5634'],
   topic:['0x8ebdda277a9bcf4e56c7e14d1d611f4c04a44b91037c5de3161a6875bc58f45f',
-   '0x91891eee2488475580e3ecb4c5bf5c89e7d3a3e4933f9ec22456f0cc7ffa16f9'],feed:null,tag:'sharc'},
+   '0x91891eee2488475580e3ecb4c5bf5c89e7d3a3e4933f9ec22456f0cc7ffa16f9'],feed:'https://sharc.fun/api/tokens',tag:'sharc',shape:'own'},
  circlewarp:{label:'CircleWarp',factories:['0x0dcad158e98bc24455f9e94f46709d8a5f6d1255'],
-  topic:'0x0b4cfda446fdf9ec5a85855f088c154869eb62e3e723d7d80319b680f90e0cfd',feed:null,tag:'warp'},
+  topic:'0x0b4cfda446fdf9ec5a85855f088c154869eb62e3e723d7d80319b680f90e0cfd',feed:'https://warp-arc-production.up.railway.app/api/tokens',tag:'warp',shape:'own'},
  archemist:{label:'Archemist',factories:['0x44b1091009c6f459fe4bf85586204134e2f29774'],
-  topic:'0x7a88d8b25b54a99f23965e27a915cccb70666d4598f3d6338c434617b74b9b5f',feed:null,tag:'archi'},
+  topic:'0x7a88d8b25b54a99f23965e27a915cccb70666d4598f3d6338c434617b74b9b5f',feed:'https://api.archemist.fun/api/tokens?chain=arc-mainnet&limit=100',tag:'archi',shape:'own'},
  'pools-trade':{label:'pools.trade',factories:['0x0000ffffbe8efe702c8703ae3477ff5de3d319c0'],
-  topic:'0x2e2b3f61b70d2d131b2a807371103cc98d51adcaa5e9a8f9c32658ad8426e74e',feed:null,tag:'poolstrade'},
+  topic:'0x2e2b3f61b70d2d131b2a807371103cc98d51adcaa5e9a8f9c32658ad8426e74e',feed:'https://api.radardex.pro/tokens?launchpad=poolstrade&sort=volume24&dir=desc&window=24h&limit=500',tag:'poolstrade'},
  noxa:{label:'Noxa',factories:['0xe7d4e64079fe467a21801b36ccc6d9b3f66bd372'],
-  topic:'0x1461370115e1c2be79cb529f8cfcbd11316e789d9c6099fc83417b0b4c48c62a',feed:null,tag:'noxa'},
+  topic:'0x1461370115e1c2be79cb529f8cfcbd11316e789d9c6099fc83417b0b4c48c62a',feed:'https://api.radardex.pro/tokens?launchpad=noxa&sort=volume24&dir=desc&window=24h&limit=500',tag:'noxa'},
  radardex:{label:'RadarDEX',factories:['0x4b638c1502a07a8e1a26112ee98f51a3f34bc93a','0xdc6f9efa59c314a2c5ec8f2b28666415d228f5ee'],
-  topic:'0x851d681a32f0efba577c4a1bd412f74b575764a6b91e499a05a48a23f3821d66',feed:null,tag:'radar'},
+  topic:'0x851d681a32f0efba577c4a1bd412f74b575764a6b91e499a05a48a23f3821d66',feed:'https://api.radardex.pro/tokens?launchpad=radar&sort=volume24&dir=desc&window=24h&limit=500',tag:'radar'},
  dyor:{
   label:'DYOR',
   // Two factories, each announcing a launch with its own event. The current one is first.
   factories:['0x80b42aed46d73f47119dc444bea28a9e68f32bf4','0xdfef2f90f7e52609cc89b80b68ff6a1c86c4ddc4'],
   topic:['0x8f8815afd174b9556e4ef54fbb59bb79d5c567fa89760ac9409682fb9459bfad',
    '0xb03c53b28e78a88e31607a27e1fa48234dce28d5d9d9ec7b295aeb02e674a1e1'],
-  // No market feed: DYOR's launches are listed from the factory and priced from our own chain reading.
-  feed:null,
-  tag:'dyor'
+  // DYOR's own API, used for coverage; the factory registry still decides what is confirmed.
+  feed:'https://arc-api-production-ef9c.up.railway.app/api/arc/v1/tokens?limit=100',
+  tag:'dyor',shape:'own'
  },
  o1:{
   label:'o1',

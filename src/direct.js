@@ -6,7 +6,7 @@ import {knownNames} from './onchain.js';
 // How long a source's answer is reused. Shorter than the sync round, so a round never serves an answer
 // fetched two rounds ago.
 const FEED_TTL=Math.max(5000,Number(process.env.FEED_TTL_MS||20000));
-const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||25)));
+const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||60)));
 export const feeds = {
   noxa: 'https://api.radardex.pro/tokens?launchpad=noxa&sort=volume24&dir=desc&window=24h&limit=500',
   // ArgusPad market numbers. Membership is decided by the on-chain Portal registry in argus.js;
@@ -59,21 +59,32 @@ export async function namePadLaunches(limit=PAD_META_PER_PASS){
  if(!pending.length)return 0;
  const known=await knownNames(pending.map(r=>r.address)).catch(()=>new Map());
  const unnamed=pending.filter(r=>!known.get(r.address)?.symbol).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,limit);
+ // Named in small groups. One at a time was safe but slow enough that a pad's older launches stayed
+ // nameless for hours, and an unnamed token cannot be found by name and sorts to the bottom of every list.
  let named=0;
- for(const r of unnamed){
-  const meta=await launchMeta(r.address).catch(()=>null);
-  if(meta?.symbol)named++;
+ for(let i=0;i<unnamed.length;i+=4){
+  const batch=unnamed.slice(i,i+4);
+  const metas=await Promise.all(batch.map(r=>launchMeta(r.address).catch(()=>null)));
+  named+=metas.filter(m=>m?.symbol).length;
  }
  return named;
 }
 
+// Each pad's own reader, exactly as it was: its API, its shape, its pagination.
+// A pad backed by a launch factory: the registry says what it launched, the pad's own feed fills in the
+// market numbers where it publishes them.
 export async function ownList(id){
  if(PAD_REGISTRIES[id]){
   // The registry is filled by a background task; a sync only reads it. A pad's market feed is optional:
   // when it is missing or unusable the pad still lists its launches, and their prices and volumes come
   // from our own reading of the chain like any other token's.
   const feed=feeds[id]?await cachedJson(feeds[id],FEED_TTL).catch(()=>null):null;
-  const payload=Array.isArray(feed?.tokens)?feed:{tokens:[]};
+  // A pad that publishes its own feed answers in its own shape: an array, an items page, a tokens list.
+  // The raw answer is carried through untouched for its own reader; forcing it into one shape here left
+  // those pads with nothing.
+  const payload=Array.isArray(feed?.tokens)?{...feed}:{tokens:[]};
+  // A pad with its own reader is asked through it, so its pagination and field names are respected.
+  if(PAD_REGISTRIES[id].shape==='own')payload.raw=await feedList(id).catch(()=>null);
   const registry=await padLaunches(id);
   const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));
   const rows=registry.map(entry=>({address:entry.token,factory:entry.factory,at:entry.at==null?null:Number(entry.at)}));
@@ -85,6 +96,10 @@ export async function ownList(id){
   const meta=await knownNames(rows.map(r=>r.address)).catch(()=>new Map());
   return {...payload,registry:rows.map(r=>({...(meta.get(r.address)||{}),...r})),mirror:true};
  }
+ return feedList(id);
+}
+
+async function feedList(id){
  if(id==='argus'){
   const [registry,payload]=[knownRegistry(),await cachedJson(feeds.argus,FEED_TTL)];
   if(!Array.isArray(payload.tokens))throw Error('ArgusPad unexpected token list');
@@ -199,13 +214,20 @@ export function normalizeDirect(id,json,now=Math.floor(Date.now()/1000)){
    if(!Array.isArray(json.registry))throw Error(pad.label+' registry missing');
    const registry=new Map(json.registry.filter(r=>/^0x[0-9a-f]{40}$/i.test(r?.address)).map(r=>[r.address.toLowerCase(),r]));
    // Both checks: the feed tags the token as this pad's, and the pad's factory actually launched it.
-   // Market rows only exist when the pad publishes a feed; several pads have none and are listed purely
-   // from what their factory launched.
-   const feedTokens=json.tokens.filter(t=>t.launchpad===pad.tag&&registry.has(String(t.address||'').toLowerCase()));
-   const rows=(feedTokens.length?normalizeDirect('pools-trade',{tokens:feedTokens.map(t=>({...t,launchpad:'poolstrade'}))},now):[])
-    .map(t=>{const r=registry.get(t.address);return {...t,launchpad_id:id,factory:r.factory,
-     creation_at:t.creation_at??r.at??null,
-     metadata:{...t.metadata,source:id,data_provider:'radardex',pad_factory:r.factory,token_created_at:t.metadata?.token_created_at??r.at??null}};});
+   // A pad's own feed is trusted for its own tag. The registry stays the authority and marks each row as
+   // confirmed or not, but a row is no longer held back until the backwards scan has reached it: a pad
+   // with thousands of older launches simply vanished from the site while that scan caught up.
+   // A pad that publishes its own feed is read with its own reader; the shared shape only fits the ones
+   // mirrored from a screener. Running every pad through the shared one left those pads empty.
+   const feedRows=pad.shape==='own'
+    ? (json.raw?normalizeDirect(id,json.raw,now):[])
+    : (()=>{const t=json.tokens.filter(x=>x.launchpad===pad.tag);
+       return t.length?normalizeDirect('pools-trade',{tokens:t.map(x=>({...x,launchpad:'poolstrade'}))},now):[];})();
+   const rows=feedRows
+    .map(t=>{const r=registry.get(t.address);return {...t,launchpad_id:id,factory:r?.factory??null,
+     creation_at:t.creation_at??r?.at??null,
+     metadata:{...t.metadata,source:id,data_provider:'feed',pad_factory:r?.factory??null,
+      registry_confirmed:!!r,token_created_at:t.metadata?.token_created_at??r?.at??null}};});
    const seen=new Set(rows.map(r=>r.address));
    for(const [address,r] of registry){
     if(seen.has(address))continue;
