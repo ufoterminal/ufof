@@ -77,6 +77,8 @@ Arama sonuçlarında token logosu gösterilir. Logosu olmayan veya resmi yüklen
 
 ## Bağımlılıklar
 
+Kaldırılan kaynaklar filtre listesinde görünmez ama isimleri kayıtlı kalır: eski turlarda o kaynakla kaydedilmiş bir satır ham kimlik yerine düzgün adıyla okunur. Filtreye koymanın anlamı olmazdı, çünkü seçilse yalnızca artık tazelenmeyen eski kayıtları gösterirdi.
+
 DYOR beslemesi ve RadarDex'in Uniswap keşif sayfaları kaldırıldı. Uniswap v2/v3/v4 piyasaları artık yalnızca kendi fabrika taramamızdan geliyor; başka bir screener'ın sayfalaması yavaşladığında veya kapandığında listenin omurgası etkilenmiyor. Arama da yalnızca elimizdekini okuyor, dışarıya keşif isteği atmıyor.
 
 Kalan dış bağlantılar: her padin kendi API'si (Tolly, Sharc, CircleWarp, Archemist, pools.trade, RadarDex kendi padi için), zincir uçları ve holder listesi için explorer. Padin kendi verisini padin kendisinden almak zaten doğru olan.
@@ -142,6 +144,12 @@ Grafiğin üstünde Price ve MC düğmeleri var. MC'ye basınca mumlar, çizgi, 
 ## Yakılan arz
 
 Market overview'da yakılan arz gösterilir. Zincirden okunur, besleme verisine güvenilmez: yakma adreslerinin (`0x...dead` ve sıfır adresi) bakiyeleri ve toplam arz aynı anda okunup miktar ve yüzde çıkarılır. ARGUS'ta 35,7 milyon ve %3,57 okundu. Okuma başarısız olursa alan bilinmiyor kalır, sıfır yazılmaz. Yakma adresinde bir tam tokenden az toz kalmışsa bu bir yakma sayılmaz ve gösterilmez, çünkü ekranda "0 · 0.00%" olarak görünür ve hiçbir şey anlatmaz.
+
+## Cüzdan bakiyeleri
+
+Arama kutusuna bir cüzdan adresi yazılınca sonuçlarda "Wallet" satırı çıkar ve o adresin sayfasına götürür. Sayfa cüzdanın Arc üzerinde tuttuğu USDC'yi ve tokenleri, sitenin başka yerlerde gösterdiği fiyatlarla değerlenmiş olarak listeler; en değerliden başlayarak sıralar, fiyatını bilmediğimiz token bakiyesiyle görünür ama değeri boş kalır, uydurma bir rakam yazılmaz.
+
+Token bakiyeleri zincir explorer'ının adres indeksinden gelir, çünkü ucuza üretemeyeceğimiz tek şey bu: bir cüzdanın hangi tokenleri tuttuğunu yalnızca zincirden bulmak her tokenin bütün transferlerini taramayı gerektirirdi. USDC bakiyesi ise tek bir çağrıyla doğrudan zincirden okunur. Girilen adres zaten listemizdeki bir token ise cüzdan satırı gösterilmez, tokenin kendisi çıkar.
 
 ## Holder Maps
 

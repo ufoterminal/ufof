@@ -11,6 +11,7 @@ import {tokenHolders} from './holders.js';
 import {poolAddresses,V4_POOL_MANAGER} from './onchain.js';
 import {holderMap,requestHolderMap,setHolderMapPaused} from './holder-map.js';
 import {metadataStatus} from './token-metadata.js';
+import {walletHoldings} from './wallet.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
 let status={syncing:false,lastSync:null,lastError:null,sources:[]};
@@ -32,6 +33,13 @@ app.get('/api/holder-map/:address',route(async(req,res)=>{
  if(map.status!=='done')requestHolderMap(req.params.address);
  res.json(map);
 }));
+app.get('/api/wallet/:address',route(async(req,res)=>{
+ if(!/^0x[0-9a-f]{40}$/i.test(req.params.address))return res.status(400).json({error:'Invalid address'});
+ // Prices come from the same list the rest of the site shows, so a holding is valued consistently.
+ const {rows}=await listMarkets({mode:'all',limit:5000});
+ const prices=new Map(rows.map(r=>[r.address,r]));
+ res.json(await walletHoldings(req.params.address,prices));
+}));
 app.get('/api/onchain',route(async(_,res)=>res.json({...await onchainStatus(),metadata:await metadataStatus()})));
 app.get('/api/indexer',route(async(_,res)=>res.json(await snapshotStatus())));
 app.get('/api/markets',route(async(req,res)=>res.json({...await listMarkets(req.query),status})));
@@ -46,6 +54,7 @@ app.get('/api/market/:address',route(async(req,res)=>{
 app.get('/vendor/charts.js',(_,res)=>res.sendFile(path.join(root,'../node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js')));
 app.use(express.static(path.join(root,'../public')));
 app.get('/token/:address',(_,res)=>res.sendFile(path.join(root,'../public/index.html')));
+app.get('/wallet/:address',(_,res)=>res.sendFile(path.join(root,'../public/index.html')));
 await init();
 const stopWorker=process.env.INDEXER_MODE==='external'?()=>{}:startWorker();
 const server=app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('[http] Listening on '+(process.env.PORT||3000)));

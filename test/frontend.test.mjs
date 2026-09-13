@@ -78,3 +78,17 @@ test('the market row is trimmed to fit a laptop screen without sideways scrollin
  assert.ok(css.includes('text-overflow:ellipsis'),'a long name is clipped rather than widening the row');
  assert.ok(/\.market-table th,\.market-table td\{padding-left:8px/.test(css),'the number columns give up a little padding');
 });
+
+test('retired sources keep their name but are not offered as a filter',async()=>{
+ const {SOURCES}=await import('../public/sources.js');
+ assert.equal(SOURCES['dyorswap-v2'].retired,true);
+ assert.equal(SOURCES.dyor.retired,true);
+ assert.ok(terminal.includes('filter(([,s])=>!s.retired)'),'the dropdown leaves them out');
+ assert.ok(SOURCES.dyor.label==='DYOR','a row saved under an old source still reads as a name');
+});
+
+test('an address that is not a listed token is offered as a wallet',()=>{
+ assert.ok(terminal.includes("href=\"/wallet/"),'search can lead to a wallet page');
+ assert.ok(terminal.includes("!d.rows.some(t=>t.address===query.toLowerCase())"),'a token address still shows the token first');
+ assert.ok(terminal.includes("id=\"wallet-rows\""),'the wallet page renders holdings');
+});

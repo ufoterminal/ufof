@@ -2,6 +2,7 @@ import {SOURCES,VENUES} from './sources.js';
 import {esc,valid,price,usd,count,percent,color,short,age,date,since,safeUrl,sourceName,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
+const wallet=location.pathname.startsWith('/wallet/')?location.pathname.split('/').pop():null;
 let watch=[];try{watch=JSON.parse(localStorage.getItem('arc-radar-watch-v1')||'[]').filter(a=>/^0x[0-9a-f]{40}$/.test(a)).slice(0,100);}catch{}
 const timeframes=new Set(['1m','5m','15m','1h','4h','1d']);
 const chartViews=new Set(['candles','line']);
@@ -17,7 +18,7 @@ function listShell(){
  app.innerHTML='<section class="hero"><div><div class="eyebrow">ARC NETWORK / MARKET EXPLORER</div><h1>Your view of Arc.</h1><p>Discover tokens. Follow the market. All in one place.</p></div><div class="stats"><div><small>ACTIVE MARKETS</small><strong id="stat-active">—</strong></div><div><small>24H VOLUME</small><strong id="stat-volume">—</strong></div><div><small>LIQUIDITY</small><strong id="stat-liquidity">—</strong></div><div><small>24H TXNS</small><strong id="stat-transactions">—</strong></div></div></section>'+
  '<div class="tape"><div class="tape-label">↗ MOST ACTIVE</div><div id="tape-items" class="tape-items"><span class="muted">Connecting to markets…</span></div></div><div id="list-banner" class="banner"></div>'+
  '<div class="workspace"><section class="market-main"><div class="toolbar"><div class="modes">'+[['active','Trending'],['new','New tokens'],['gainers','Gainers'],['losers','Losers'],['watch','☆ Watchlist']].map(([id,label])=>'<button data-mode="'+id+'" class="'+(state.mode===id?'active':'')+'">'+label+'</button>').join('')+'</div><div class="refresh-area"><span class="pill">24H</span><span class="synced" id="synced">Connecting</span><button id="refresh" class="icon-btn" aria-label="Refresh markets">↻</button></div></div>'+
- '<div class="filters"><select id="source-filter" aria-label="Launchpad"><option value="">All sources</option>'+Object.entries(SOURCES).map(([id,s])=>'<option value="'+id+'">'+s.label+'</option>').join('')+'</select><select id="version-filter" aria-label="Pool version"><option value="">All versions</option><option value="v2">V2</option><option value="v3">V3</option><option value="v4">V4</option></select><select id="venue-filter" aria-label="DEX"><option value="">All DEXes</option>'+Object.entries(VENUES).map(([id,label])=>'<option value="'+id+'">'+label+'</option>').join('')+'</select><label>MIN LIQ<input id="min-liquidity" type="number" min="0" placeholder="$0"></label><label>MIN VOL<input id="min-volume" type="number" min="0" placeholder="$0"></label><button id="clear-filters" class="muted">Reset</button></div>'+ 
+ '<div class="filters"><select id="source-filter" aria-label="Launchpad"><option value="">All sources</option>'+Object.entries(SOURCES).filter(([,s])=>!s.retired).map(([id,s])=>'<option value="'+id+'">'+s.label+'</option>').join('')+'</select><select id="version-filter" aria-label="Pool version"><option value="">All versions</option><option value="v2">V2</option><option value="v3">V3</option><option value="v4">V4</option></select><select id="venue-filter" aria-label="DEX"><option value="">All DEXes</option>'+Object.entries(VENUES).map(([id,label])=>'<option value="'+id+'">'+label+'</option>').join('')+'</select><label>MIN LIQ<input id="min-liquidity" type="number" min="0" placeholder="$0"></label><label>MIN VOL<input id="min-volume" type="number" min="0" placeholder="$0"></label><button id="clear-filters" class="muted">Reset</button></div>'+ 
  '<div class="table-scroll"><table class="market-table"><thead><tr><th></th><th> TOKEN</th><th>TREND</th>'+[['marketCap','MCAP'],['price','PRICE'],['createdAt','TOKEN AGE'],['volume','VOLUME ↓'],['transactions','TXNS']].map(([key,label])=>'<th data-sort="'+key+'">'+label+'</th>').join('')+'<th>TRADERS</th><th data-sort="holders">HOLDERS</th><th>5M</th><th>1H</th><th>6H</th><th data-sort="change">24H</th><th data-sort="liquidity">LIQUIDITY</th></tr></thead><tbody id="market-rows">'+Array.from({length:8},()=>'<tr><td></td><td><div class="skeleton"></div></td><td colspan="13"><div class="skeleton"></div></td></tr>').join('')+'</tbody></table></div>'+
  '<footer class="footer"><span id="result-count">Loading markets…</span><div class="pagination"><button id="page-prev" aria-label="Previous page">‹</button><span id="page-label">1 / 1</span><button id="page-next" aria-label="Next page">›</button></div></footer></section>'+
  '<aside class="sidepanel"><section class="side-section"><h2 class="side-title">Market pulse <span>24H</span></h2><div id="pulse"></div></section></aside></div>';
@@ -59,7 +60,10 @@ async function search(){
  $('search-results').innerHTML='<div class="side-note" style="padding:12px">Searching the archive…</div>';
  try{
   const d=await api('/api/markets?q='+encodeURIComponent(query)+'&limit=10',searchController);if(seq!==searchSeq)return;
-  $('search-results').innerHTML=d.rows.map(t=>'<a href="/token/'+esc(t.address)+'"><span class="search-token">'+icon(t)+'<span><b>'+esc(t.symbol)+'</b><small>'+esc(t.name)+' · '+esc(sourceName(t.source))+'</small></span></span><span class="mono">'+price(t.price)+'</span></a>').join('')||'<div class="side-note" style="padding:12px">No indexed token found. Coverage depends on the connected sources.</div>';
+  // An address that is not a token in the list is still worth something: it is probably a wallet.
+  const asWallet=/^0x[0-9a-fA-F]{40}$/.test(query)&&!d.rows.some(t=>t.address===query.toLowerCase())
+   ?'<a href="/wallet/'+esc(query.toLowerCase())+'"><span class="search-token"><span class="token-icon">\u25ce</span><span><b>Wallet</b><small>'+esc(short(query))+' \u00b7 see what it holds</small></span></span></a>':'';
+  $('search-results').innerHTML=asWallet+d.rows.map(t=>'<a href="/token/'+esc(t.address)+'"><span class="search-token">'+icon(t)+'<span><b>'+esc(t.symbol)+'</b><small>'+esc(t.name)+' · '+esc(sourceName(t.source))+'</small></span></span><span class="mono">'+price(t.price)+'</span></a>').join('')||(asWallet||'<div class="side-note" style="padding:12px">No indexed token found. Coverage depends on the connected sources.</div>');
  }catch(e){if(e.name!=='AbortError'&&seq===searchSeq)$('search-results').textContent='Search unavailable. Try again.';}
 }
 $('global-search').addEventListener('input',()=>{searchSeq++;searchController?.abort();clearTimeout(searchTimer);searchTimer=setTimeout(search,220);});
@@ -255,7 +259,34 @@ async function loadDetail(){
  try{const d=await api('/api/market/'+encodeURIComponent(address)+'?tf='+tf,detailController);if(seq!==detailSeq)return;currentDetail=d;paintDetail(d);}
  catch(e){if(e.name==='AbortError')return;$('chart-error').textContent=e.message;if(!currentDetail){$('chart-empty').textContent='Token data is unavailable.';$('detail-metrics').textContent=e.message;}}
 }
-if(address){detailShell();loadDetail();
+// A wallet page: what the address holds on Arc, valued with the same prices the market list shows.
+function walletShell(){
+ app.innerHTML='<div id="wallet-head" class="token-head"><a class="back" href="/" aria-label="Back to markets">\u2190</a><div class="skeleton" style="width:260px"></div></div>'
+  +'<section class="panel"><div class="trade-tabs"><b>HOLDINGS</b><span id="wallet-count"></span><span style="margin-left:auto" id="wallet-note">Valued with the prices shown across the site</span></div>'
+  +'<table class="trades-table"><thead><tr><th>TOKEN</th><th>BALANCE</th><th>PRICE</th><th>VALUE</th></tr></thead>'
+  +'<tbody id="wallet-rows"><tr><td colspan="4" class="empty">Reading balances\u2026</td></tr></tbody></table></section>';
+}
+
+async function loadWallet(){
+ try{
+  const d=await api('/api/wallet/'+encodeURIComponent(wallet));
+  $('wallet-head').innerHTML='<a class="back" href="/" aria-label="Back to markets">\u2190</a><div><h1>Wallet</h1><span class="muted">'+esc(short(d.address))+'</span></div>'
+   +'<strong class="head-price">'+usd(d.totals.valued)+'</strong><span class="muted">holdings value</span>'
+   +'<div class="contract"><span>'+esc(short(d.address))+'</span><button class="icon-btn" data-copy="'+esc(d.address)+'" aria-label="Copy wallet address">\u29c9</button><a href="https://arc-scan.org/address/'+esc(d.address)+'" target="_blank" rel="noopener">Arcscan \u2197</a></div>';
+  $('wallet-count').textContent=count(d.totals.tokens)+' tokens'+(d.totals.unpriced?' \u00b7 '+count(d.totals.unpriced)+' unpriced':'');
+  const usdcRow=valid(d.usdc)&&d.usdc>0
+   ?'<tr><td><span class="token-cell"><span class="token-icon">$</span><span><strong>USDC</strong><small class="muted">Arc gas token</small></span></span></td><td>'+count(d.usdc)+'</td><td>$1.00</td><td>'+usd(d.usdc)+'</td></tr>':'';
+  const rows=d.tokens.map(t=>'<tr><td><a class="token-cell" href="/token/'+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><small class="muted">'+esc(t.name||short(t.address))+'</small></span></a></td>'
+   +'<td>'+count(t.balance)+'</td><td>'+(t.price==null?'\u2014':price(t.price))+'</td><td>'+(t.value==null?'\u2014':usd(t.value))+'</td></tr>').join('');
+  $('wallet-rows').innerHTML=(usdcRow+rows)||'<tr><td colspan="4" class="empty">This address holds no tokens we can see.</td></tr>';
+  if(d.errors)$('wallet-note').textContent='Balances unavailable right now';
+ }catch(e){
+  $('wallet-rows').innerHTML='<tr><td colspan="4" class="empty">Balances unavailable right now.</td></tr>';
+ }
+}
+
+if(wallet){walletShell();loadWallet();}
+else if(address){detailShell();loadDetail();
  app.addEventListener('click',e=>{const b=e.target.closest('[data-panel]');if(b)showPanel(b.dataset.panel);});
 }else{listShell();loadList();}
 setInterval(()=>{if(!document.hidden){if(address)loadDetail();else loadList();}},15000);
