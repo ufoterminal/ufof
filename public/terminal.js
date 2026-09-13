@@ -295,8 +295,8 @@ function usdcMark(){
 function walletShell(){
  app.innerHTML='<div id="wallet-head" class="token-head"><a class="back" href="/" aria-label="Back to markets">\u2190</a><div class="skeleton" style="width:260px"></div></div>'
   +'<section class="panel"><div class="trade-tabs"><b>HOLDINGS</b><span id="wallet-count"></span><span style="margin-left:auto" id="wallet-note">Valued with the prices shown across the site</span></div>'
-  +'<table class="trades-table"><thead><tr><th>TOKEN</th><th>BALANCE</th><th>PRICE</th><th>VALUE</th></tr></thead>'
-  +'<tbody id="wallet-rows"><tr><td colspan="4" class="empty">Reading balances\u2026</td></tr></tbody></table></section>';
+  +'<table class="trades-table"><thead><tr><th>TOKEN</th><th>BALANCE</th><th>PRICE</th><th>24H</th><th>VALUE</th><th>SHARE</th></tr></thead>'
+  +'<tbody id="wallet-rows"><tr><td colspan="6" class="empty">Reading balances\u2026</td></tr></tbody></table></section>';
 }
 
 async function loadWallet(){
@@ -305,15 +305,15 @@ async function loadWallet(){
   $('wallet-head').innerHTML='<a class="back" href="/" aria-label="Back to markets">\u2190</a><div><h1>Wallet</h1><span class="muted">'+esc(short(d.address))+'</span></div>'
    +'<strong class="head-price">'+usd(d.totals.valued)+'</strong><span class="muted">holdings value</span>'
    +'<div class="contract"><span>'+esc(short(d.address))+'</span><button class="icon-btn" data-copy="'+esc(d.address)+'" aria-label="Copy wallet address">\u29c9</button><a href="https://arc-scan.org/address/'+esc(d.address)+'" target="_blank" rel="noopener">Arcscan \u2197</a></div>';
-  $('wallet-count').textContent=count(d.totals.tokens)+' tokens'+(d.totals.unpriced?' \u00b7 '+count(d.totals.unpriced)+' unpriced':'');
+  $('wallet-count').textContent=count(d.totals.tokens)+' tokens \u00b7 '+usd(d.totals.inTokens)+' in tokens, '+usd(d.totals.inUsdc)+' in USDC'+(d.totals.unpriced?' \u00b7 '+count(d.totals.unpriced)+' unpriced':'');
   const usdcRow=valid(d.usdc)&&d.usdc>0
-   ?'<tr><td><span class="token-cell">'+usdcMark()+'<span><strong>USDC</strong><small class="muted">Arc gas token</small></span></span></td><td>'+count(d.usdc)+'</td><td>$1.00</td><td>'+usd(d.usdc)+'</td></tr>':'';
+   ?'<tr><td><span class="token-cell">'+usdcMark()+'<span><strong>USDC</strong><small class="muted">Arc gas token</small></span></span></td><td>'+count(d.usdc)+'</td><td>$1.00</td><td class="muted">\u2014</td><td>'+usd(d.usdc)+'</td><td>'+(valid(d.totals.usdcShare)?d.totals.usdcShare.toFixed(1)+'%':'\u2014')+'</td></tr>':'';
   const rows=d.tokens.map(t=>'<tr><td><a class="token-cell" href="/token/'+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><small class="muted">'+esc(t.name||short(t.address))+'</small></span></a></td>'
-   +'<td>'+count(t.balance)+'</td><td>'+(t.price==null?'\u2014':price(t.price))+'</td><td>'+(t.value==null?'\u2014':usd(t.value))+'</td></tr>').join('');
-  $('wallet-rows').innerHTML=(usdcRow+rows)||'<tr><td colspan="4" class="empty">This address holds no tokens we can see.</td></tr>';
+   +'<td>'+count(t.balance)+'</td><td>'+(t.price==null?'\u2014':price(t.price))+'</td><td class="'+color(t.change24h)+'">'+percent(t.change24h)+'</td><td>'+(t.value==null?'\u2014':usd(t.value))+'</td><td>'+(valid(t.share)?t.share.toFixed(1)+'%':'\u2014')+'</td></tr>').join('');
+  $('wallet-rows').innerHTML=(usdcRow+rows)||'<tr><td colspan="6" class="empty">This address holds no tokens we can see.</td></tr>';
   if(d.errors)$('wallet-note').textContent='Balances unavailable right now';
  }catch(e){
-  $('wallet-rows').innerHTML='<tr><td colspan="4" class="empty">Balances unavailable right now.</td></tr>';
+  $('wallet-rows').innerHTML='<tr><td colspan="6" class="empty">Balances unavailable right now.</td></tr>';
  }
 }
 

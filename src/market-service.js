@@ -3,7 +3,7 @@ import {number,directDetail} from './direct.js';
 import {ownChart} from './chart-engine.js';
 import {SOURCES} from '../public/sources.js';
 import {persistRecords} from './providers.js';
-import {requestSnapshot,readSnapshot,initSnapshots} from './snapshots.js';
+import {requestSnapshot,readSnapshot,publishSnapshot,initSnapshots} from './snapshots.js';
 import {readBurned} from './onchain.js';
 let snapshot=null,until=0,inflight=null;
 const sources=new Set(Object.keys(SOURCES));
@@ -154,7 +154,12 @@ function refreshDetail(address,tf){
  const key=address+':'+tf;
  if(rebuilding.has(key)||rebuilding.size>6)return;
  rebuilding.add(key);
- buildMarket(address,tf).catch(()=>null).finally(()=>rebuilding.delete(key));
+ // The rebuilt payload has to be stored, or the page keeps reading the same old snapshot: the work was
+ // being done and thrown away, which is why a token page could sit on transactions from ten minutes ago
+ // however often it polled.
+ buildMarket(address,tf)
+  .then(payload=>payload&&publishSnapshot(address,tf,payload))
+  .catch(()=>null).finally(()=>rebuilding.delete(key));
 }
 
 export async function getMarket(address,tf='1h'){

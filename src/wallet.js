@@ -40,6 +40,11 @@ export function shapeHoldings(result,prices=new Map()){
    name:String(item.TokenName||market?.name||''),
    balance,price,
    value:price==null?null:balance*price,
+   // What the holding did today and how deep the market is, so a position can be read without opening
+   // each token. Taken from the same row the list shows, never computed here.
+   change24h:market?.changes?.['24h']??null,
+   marketCap:market?.marketCap??null,
+   liquidity:market?.liquidity??null,
    logo:market?.logo??null,
    source:market?.source??null,
    listed:!!market});
@@ -67,8 +72,12 @@ export async function walletHoldings(address,prices=new Map()){
  }catch(e){errors.tokens=e.message;}
  const usdc=await nativeBalance(wallet).catch(()=>null);
  const valued=tokens.reduce((a,t)=>a+(t.value||0),0);
- return {address:wallet,usdc,tokens,
-  totals:{tokens:tokens.length,valued:valued+(usdc||0),unpriced:tokens.filter(t=>t.value==null).length},
+ const total=valued+(usdc||0);
+ // Each holding's share of what we can value. A holding we cannot price has no share rather than a zero.
+ const withShare=tokens.map(t=>({...t,share:t.value==null||!(total>0)?null:t.value/total*100}));
+ return {address:wallet,usdc,tokens:withShare,
+  totals:{tokens:tokens.length,valued:total,inTokens:valued,inUsdc:usdc||0,
+   usdcShare:total>0?(usdc||0)/total*100:null,unpriced:tokens.filter(t=>t.value==null).length},
   errors:Object.keys(errors).length?errors:undefined};
 }
 

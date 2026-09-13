@@ -65,6 +65,10 @@ async function sync(){
  finally{status.syncing=false;setHolderMapPaused(false);}
 }
 let stopped=false;
-async function loop(){await sync();if(!stopped)setTimeout(loop,60000).unref();}
+// How often the market list is rebuilt. A minute between rounds meant a listed price could be a minute and
+// a half behind the chain once a feed's own cache is counted; the token page already refreshes in seconds,
+// so the list was the slow half.
+const SYNC_INTERVAL=Math.max(10000,Number(process.env.SYNC_INTERVAL_MS||25000));
+async function loop(){await sync();if(!stopped)setTimeout(loop,SYNC_INTERVAL).unref();}
 loop();
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{stopped=true;stopWorker();server.close();await pool.end();process.exit(0);});

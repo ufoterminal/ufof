@@ -3,6 +3,9 @@ import {knownRegistry,launchMeta} from './argus.js';
 import {PAD_REGISTRIES,padLaunches} from './pad-registry.js';
 import {knownNames} from './onchain.js';
 // How many unnamed launches are read from their contracts in one pass.
+// How long a source's answer is reused. Shorter than the sync round, so a round never serves an answer
+// fetched two rounds ago.
+const FEED_TTL=Math.max(5000,Number(process.env.FEED_TTL_MS||20000));
 const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||25)));
 export const feeds = {
   noxa: 'https://api.radardex.pro/tokens?launchpad=noxa&sort=volume24&dir=desc&window=24h&limit=500',
@@ -50,7 +53,7 @@ export async function ownList(id){
   // The registry is filled by a background task; a sync only reads it. A pad's market feed is optional:
   // when it is missing or unusable the pad still lists its launches, and their prices and volumes come
   // from our own reading of the chain like any other token's.
-  const feed=feeds[id]?await cachedJson(feeds[id],60000).catch(()=>null):null;
+  const feed=feeds[id]?await cachedJson(feeds[id],FEED_TTL).catch(()=>null):null;
   const payload=Array.isArray(feed?.tokens)?feed:{tokens:[]};
   const registry=await padLaunches(id);
   const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));
@@ -67,7 +70,7 @@ export async function ownList(id){
   return {...payload,registry:rows.map(r=>({...(meta.get(r.address)||{}),...r})),mirror:true};
  }
  if(id==='argus'){
-  const [registry,payload]=[knownRegistry(),await cachedJson(feeds.argus,60000)];
+  const [registry,payload]=[knownRegistry(),await cachedJson(feeds.argus,FEED_TTL)];
   if(!Array.isArray(payload.tokens))throw Error('ArgusPad unexpected token list');
   // A launch the market feed has not picked up yet still belongs on the list: name it from the token contract.
   const listed=new Set(payload.tokens.map(t=>String(t.address||'').toLowerCase()));
@@ -79,13 +82,13 @@ export async function ownList(id){
   return {...payload,registry:registry.map(entry=>({...entry,...(meta.get(entry.address)||{})})),mirror:true};
  }
  if(id==='noxa'){
-  const payload=await cachedJson(feeds.noxa,60000);
+  const payload=await cachedJson(feeds.noxa,FEED_TTL);
   if(!Array.isArray(payload.tokens))throw Error('Noxa unexpected token list');
   return {...payload,mirror:true};
  }
  if(id==='dyor'){
   const base='https://arc-api-production-ef9c.up.railway.app/api/arc/v1/tokens';
-  const first=await cachedJson(feeds.dyor,60000),items=[...(first.items||first.data||[])];
+  const first=await cachedJson(feeds.dyor,FEED_TTL),items=[...(first.items||first.data||[])];
   let cursor=first.nextCursor??first.next_cursor??null,pages=1;
   // DYOR cursors are stable by launch block. Keep a bounded page budget and
   // cache cursor pages longer than the head so a 60s sync never hammers the API.
@@ -98,7 +101,7 @@ export async function ownList(id){
   return {...first,items:[...new Map(items.map(t=>[t.token||t.address,t])).values()],pagination_pages:pages};
  }
  if(id==='circlewarp'){
-  const tokens=await cachedJson(feeds.circlewarp,60000),result=new Array(tokens.length);
+  const tokens=await cachedJson(feeds.circlewarp,FEED_TTL),result=new Array(tokens.length);
   let cursor=0;
   await Promise.all(Array.from({length:3},async()=>{
    while(cursor<tokens.length){const i=cursor++,t=tokens[i];
@@ -110,7 +113,7 @@ export async function ownList(id){
   return result;
  }
  if(id==='archemist'){
-  const first=await cachedJson(feeds.archemist,60000);
+  const first=await cachedJson(feeds.archemist,FEED_TTL);
   const items=first.tokens||first.items||first.data||[];
   if(!Array.isArray(items))throw Error('archemist unexpected token list');
   return {...first,tokens:[...new Map(items.map(t=>[String(t.token_address||t.address||'').toLowerCase(),t])).values()]};
@@ -120,7 +123,7 @@ export async function ownList(id){
   const items=payload.tokens||payload.items||payload.data||[];
   return {...payload,tokens:Array.isArray(items)&&items.length?items:poolsTradeKnown,source:'pools-trade',mirror:!process.env.POOLS_TRADE_ARC_API};
  }
- if(id!=='tolly')return cachedJson(feeds[id],60000);
+ if(id!=='tolly')return cachedJson(feeds[id],FEED_TTL);
  const first=await cachedJson(feeds.tolly,60000);
  const tokens=[...(first.tokens||[])],pageSize=tokens.length;
  if(!pageSize)return first;
