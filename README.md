@@ -139,6 +139,11 @@ Başlıktaki fiyat ve market değeri her zaman diliminde aynıdır. Eskiden bu r
 
 ## Grafik geçmişi
 
+Zincirden geriye okuma hızlandırıldı. Üç ayrı sorun vardı. Birincisi, her log için bloğun zamanı ayrıca soruluyordu; Arc logları zaten zaman damgası taşıdığı için blok başına bir istek tamamen kalktı. İkincisi, tur başına tek pencere geriye iniliyordu; artık varsayılan on pencere (`RPC_HISTORY_WINDOWS`), art arda ve sırayla, yani imleç kesintisiz ilerliyor. Üçüncüsü, uçlardan biri kontrat okumasını ve eski log sorgusunu taşıma hatası değil RPC hatası olarak reddediyordu; yedek zincir bunu geçerli cevap sayıp orada duruyordu, artık uçlar tek tek deneniyor ve ilk gerçekten cevap veren kullanılıyor. Ayrıca havuzun token bilgileri aynı anda değil sırayla okunuyor, birlikte gönderildiğinde ilk uç JSON-RPC olmayan bir cevap veriyordu.
+
+Ölçüm: TOLLY havuzunda tur başına 0,6 gün geriye iniliyor (öncesinde 0,06 gün), yaklaşık 13 saniyede.
+
+
 Grafik bir tokenin ilk gününden başlar, ama geçmiş anında değil zamanla dolar. Sayfalı geçmiş yayınlayan kaynaklarda (Sharc, CircleWarp) sayfalar sırayla çekilir; diğerlerinde geçmiş havuzun kendi swap loglarından geriye doğru okunur. İkisi de tur tur ilerlediği için yeni açılmış bir token sayfası önce kısa bir grafikle gelir, sonra geriye uzar.
 
 Bir eksik vardı ve kapatıldı: zincirden geriye okuma yalnızca sayfalı geçmişi olmayan kaynaklar için çalışıyordu. Sayfalı bir kaynağın API'si eski sayfaları vermeyi kestiğinde grafik orada kalıyor ve token ömrünün ortasından başlıyordu. Artık sayfalar bittiğinde veya durduğunda zincir devreye giriyor.

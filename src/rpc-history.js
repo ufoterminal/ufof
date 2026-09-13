@@ -1,7 +1,10 @@
 import {createPublicClient,fallback,http,parseAbi,parseAbiItem,keccak256,encodeAbiParameters,parseAbiParameters} from 'viem';
 import {RPC_HTTP,USDC} from './config.js';
 
-const rpc=createPublicClient({transport:fallback(RPC_HTTP.map(url=>http(url,{timeout:6000,retryCount:0}))),cacheTime:30000});
+// Batching is off because Arc rejects batched requests. Ranking is deliberately not used here: this
+// reader holds a cursor across calls, and the ranker's own probing made its passes hang.
+const rpc=createPublicClient({transport:fallback(
+ RPC_HTTP.map(url=>http(url,{batch:false,timeout:12000,retryCount:1}))),cacheTime:30000});
 const abi=parseAbi(['function token0() view returns (address)','function token1() view returns (address)','function decimals() view returns (uint8)']);
 const events=[parseAbiItem('event Swap(address indexed sender,address indexed recipient,int256 amount0,int256 amount1,uint160 sqrtPriceX96,uint128 liquidity,int24 tick)'),parseAbiItem('event Swap(address indexed sender,uint256 amount0In,uint256 amount1In,uint256 amount0Out,uint256 amount1Out,address indexed to)')];
 const v4Swap=parseAbiItem('event Swap(bytes32 indexed id,address indexed sender,int128 amount0,int128 amount1,uint160 sqrtPriceX96,uint128 liquidity,int24 tick,uint24 fee)');
@@ -25,17 +28,52 @@ export function v4PoolInfo(address,token,descriptor,decimals){
  return {v4:true,token0:a===token,decimals,quoteDecimals:descriptor.nativeQuote?18:6};
 }
 const pools=new Map(),times=new Map();let verified=false;
+// Arc returns the block's timestamp on the log itself. Using it removes one request per block: asking the
+// node separately for every block in a window was what made reaching back through a token's history take
+// hours, and on a busy pool it stalled the pass outright.
+const logTime=log=>{
+ const raw=log?.blockTimestamp;
+ if(raw==null)return null;
+ const at=Number(typeof raw==='string'?BigInt(raw):raw);
+ return Number.isFinite(at)&&at>0?at:null;
+};
+
 async function blockTime(block){
  const key=String(block);if(times.has(key))return times.get(key);
  const at=Number((await rpc.getBlock({blockNumber:BigInt(block)})).timestamp);
  if(times.size>3000)times.delete(times.keys().next().value);times.set(key,at);return at;
 }
+// One endpoint answers a contract read with a JSON-RPC error rather than a transport failure, and a
+// fallback transport treats that as a real answer and stops there. Contract reads therefore try the
+// endpoints themselves, in order, and keep the first that actually answers.
+const readers=RPC_HTTP.map(url=>createPublicClient({transport:http(url,{batch:false,timeout:10000,retryCount:0})}));
+async function readAnywhere(call){
+ let last;
+ for(const reader of readers){
+  try{return await reader.readContract(call);}catch(e){last=e;}
+ }
+ throw last||Error('No endpoint answered the contract read');
+}
+
+// Log queries need the same treatment, and for the same reason: an endpoint that does not keep old logs
+// answers a deep window with an error rather than a failure, and the fallback would take that as final.
+async function logsAnywhere(query){
+ let last;
+ for(const reader of readers){
+  try{return await reader.getLogs(query);}catch(e){last=e;}
+ }
+ throw last||Error('No endpoint answered the log query');
+}
+
 async function poolInfo(address,token,descriptor){
  const key=address+token;if(pools.has(key))return pools.get(key);
  if(!verified){if(await rpc.getChainId()!==5042)throw Error('RPC chain mismatch');verified=true;}
- if(address.length===66){const d=await rpc.readContract({address:token,abi,functionName:'decimals'});const info=v4PoolInfo(address,token,descriptor,Number(d));pools.set(key,info);return info;}
- const [a,b,d]=await Promise.all([
-  rpc.readContract({address,abi,functionName:'token0'}),rpc.readContract({address,abi,functionName:'token1'}),rpc.readContract({address:token,abi,functionName:'decimals'})]);
+ if(address.length===66){const d=await readAnywhere({address:token,abi,functionName:'decimals'});const info=v4PoolInfo(address,token,descriptor,Number(d));pools.set(key,info);return info;}
+ // Read one after another. Firing these together made the first endpoint answer with something that is
+ // not JSON-RPC at all, which failed the whole backfill; this happens once per pool and is then cached.
+ const a=await readAnywhere({address,abi,functionName:'token0'});
+ const b=await readAnywhere({address,abi,functionName:'token1'});
+ const d=await readAnywhere({address:token,abi,functionName:'decimals'});
  const token0=a.toLowerCase()===token;
  if((token0?b:a).toLowerCase()!==USDC||(token0?a:b).toLowerCase()!==token)throw Error('Pool is not the selected token/USDC market');
  const info={token0,decimals:Number(d),quoteDecimals:6};pools.set(key,info);return info;
@@ -72,14 +110,25 @@ export async function poolHistory(token,address,state={},descriptor){
  if(state.head!=null&&head-state.head>=10000){from=state.head+1;to=Math.min(head,from+9999);}
  else {to=state.oldest!=null?state.oldest-1:head;from=Math.max(0,to-9999);}
  const ranges=to>=0?[{from,to}]:[];
+ // One window per pass meant a token a few weeks old took hours to reach its first day. Several are taken
+ // per pass, in sequence rather than together, and they are consecutive so the checkpoint still moves in
+ // one unbroken line.
+ const extra=Math.max(0,Math.min(60,Number(process.env.RPC_HISTORY_WINDOWS||10))-1);
+ let edge=ranges.length?ranges[ranges.length-1].from:null;
+ for(let i=0;i<extra&&edge!=null&&edge>0;i++){
+  const stop=edge-1,start=Math.max(0,stop-9999);
+  ranges.push({from:start,to:stop});edge=start;
+ }
  if(state.head!=null&&head>state.head&&head-state.head<10000)ranges.push({from:state.head+1,to:head});
  const trades=[];
  for(const range of ranges){
-  const logs=await rpc.getLogs({...(info.v4?{address:v4Manager,event:v4Swap,args:{id:address}}:{address,events}),fromBlock:BigInt(range.from),toBlock:BigInt(range.to)});
+  const logs=await logsAnywhere({...(info.v4?{address:v4Manager,event:v4Swap,args:{id:address}}:{address,events}),fromBlock:BigInt(range.from),toBlock:BigInt(range.to)});
   let cursor=0;
-  await Promise.all(Array.from({length:3},async()=>{while(cursor<logs.length){const log=logs[cursor++];if(log.removed)continue;const row=decodePoolTrade(log,info,await blockTime(log.blockNumber));if(row)trades.push({...row,pool:address,generation});}}));
+  await Promise.all(Array.from({length:3},async()=>{while(cursor<logs.length){const log=logs[cursor++];if(log.removed)continue;const row=decodePoolTrade(log,info,logTime(log)??await blockTime(log.blockNumber));if(row)trades.push({...row,pool:address,generation});}}));
  }
- const oldest=Math.min(state.oldest??from,from),end=Math.max(state.head??to,...ranges.map(r=>r.to));
+ // The checkpoint records the deepest window this pass read, not the first of them.
+ const deepest=Math.min(...ranges.map(r=>r.from));
+ const oldest=Math.min(state.oldest??deepest,deepest),end=Math.max(state.head??to,...ranges.map(r=>r.to));
  const hash=(await rpc.getBlock({blockNumber:BigInt(end)})).hash;
  return {trades,state:{schema:3,pool:address,oldest,head:end,hash,generation,from:await blockTime(oldest),to:await blockTime(end),complete:oldest===0}};
 }
