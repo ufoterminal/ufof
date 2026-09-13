@@ -3,7 +3,7 @@ import {knownRegistry,launchMeta} from './argus.js';
 import {PAD_REGISTRIES,padLaunches} from './pad-registry.js';
 import {knownNames} from './onchain.js';
 // How many unnamed launches are read from their contracts in one pass.
-const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||8)));
+const PAD_META_PER_PASS=Math.max(1,Math.min(200,Number(process.env.PAD_META_PER_PASS||25)));
 export const feeds = {
   noxa: 'https://api.radardex.pro/tokens?launchpad=noxa&sort=volume24&dir=desc&window=24h&limit=500',
   // ArgusPad market numbers. Membership is decided by the on-chain Portal registry in argus.js;
@@ -172,13 +172,18 @@ export function candlesFromTrades(trades,seconds){
   return [...buckets.values()].sort((a,b)=>a.bucket-b.bucket).slice(-500);
 }
 export function normalizeDirect(id,json,now=Math.floor(Date.now()/1000)){
-  if(PAD_REGISTRIES[id]){
+  // The registry path only takes over when the payload actually carries a registry. A pad's own field
+  // mapping stays reachable under the same id, which is what kept this change from rewriting every pad.
+  if(PAD_REGISTRIES[id]&&Array.isArray(json.registry)){
    const pad=PAD_REGISTRIES[id];
    if(!Array.isArray(json.tokens))throw Error(pad.label+' unexpected token list');
    if(!Array.isArray(json.registry))throw Error(pad.label+' registry missing');
    const registry=new Map(json.registry.filter(r=>/^0x[0-9a-f]{40}$/i.test(r?.address)).map(r=>[r.address.toLowerCase(),r]));
    // Both checks: the feed tags the token as this pad's, and the pad's factory actually launched it.
-   const rows=normalizeDirect('pools-trade',{tokens:json.tokens.filter(t=>t.launchpad===pad.tag&&registry.has(String(t.address||'').toLowerCase())).map(t=>({...t,launchpad:'poolstrade'}))},now)
+   // Market rows only exist when the pad publishes a feed; several pads have none and are listed purely
+   // from what their factory launched.
+   const feedTokens=json.tokens.filter(t=>t.launchpad===pad.tag&&registry.has(String(t.address||'').toLowerCase()));
+   const rows=(feedTokens.length?normalizeDirect('pools-trade',{tokens:feedTokens.map(t=>({...t,launchpad:'poolstrade'}))},now):[])
     .map(t=>{const r=registry.get(t.address);return {...t,launchpad_id:id,factory:r.factory,
      creation_at:t.creation_at??r.at??null,
      metadata:{...t.metadata,source:id,data_provider:'radardex',pad_factory:r.factory,token_created_at:t.metadata?.token_created_at??r.at??null}};});

@@ -77,6 +77,13 @@ Arama sonuçlarında token logosu ve market değeri gösterilir. Birim fiyat yer
 
 ## Bağımlılıklar
 
+Tolly, Sharc, CircleWarp, Archemist, pools.trade, Noxa, RadarDEX, DYOR, ArgusPad, Long ve o1: hepsinin launch listesi artık kendi fabrikalarından zincirden okunuyor, hiçbirinin piyasa beslemesi kullanılmıyor. Fiyat, hacim, işlem sayısı ve değişimler kendi zincir motorumuzdan geliyor.
+
+Bunun bedeli şu: sıfırdan kurulan bir veritabanında bu listeler hemen dolmaz. Fabrika taraması geriye doğru yürür ve launch adları tur başına sınırlı sayıda okunur, dolayısıyla kapsam saatler içinde birikir. Postgres bağlıyken bu bir kereliktir ve deploy'lar arasında korunur. Önceden padlerin API'si her turda hazır liste verdiği için kapsam anında geliyordu; artık anında değil ama kimseye bağlı değil.
+
+Kayıt yolu yalnızca kayıt taşıyan yükte devreye girer. Padlerin kendi alan eşlemeleri aynı kimlik altında erişilebilir kalır, bu ayrım olmadan kayıt yolu mevcut eşlemeyi devralıyor ve kaynakları bozuyordu.
+
+
 Kalan padlerin fabrikaları zincirde bulundu ve `KNOWN_PAD_FACTORIES` altında kayıtlı: Tolly `0xcad7ee36...9c8b`, Sharc üç fabrika, CircleWarp `0x0dcad158...1255`, Archemist `0x44b10910...9774`, pools.trade `0x0000ffff...19c0`, Noxa `0xe7d4e640...d372`, RadarDEX iki fabrika. Tarama denendi ve çalıştı: RadarDEX 2.387, DYOR 1.370, Tolly 749, Long 246, Sharc 168, CircleWarp 154, pools.trade 84, o1 43 launch.
 
 Bunları kaynağa bağlamak tek satırlık bir iş değil: padlerin alan eşlemesi hâlâ pad kimliğine bağlı ve kayıt yolunu açtığımda mevcut eşlemeyi devralıp sekiz testi kırdı. Ayrıştırma işi ayrıca ve dikkatle yapılmalı, o yüzden fabrikalar kayıtlı duruyor ama devrede değil.
