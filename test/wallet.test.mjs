@@ -59,3 +59,23 @@ test('a holding carries what it did today and how much of the wallet it is',asyn
   assert.ok(d.totals.valued>=6,'the total counts USDC alongside the tokens');
  }finally{globalThis.fetch=original;}
 });
+
+test('prices are looked up for the addresses held, not taken from a page of the list',async()=>{
+ const {walletHoldings}=await import('../src/wallet.js');
+ const A='0x'+'a'.repeat(40), B='0x'+'b'.repeat(40);
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>({ok:true,json:async()=>({status:'1',result:[
+  {TokenAddress:A,TokenQuantity:'1000000000000000000',TokenDivisor:'18',TokenSymbol:'AAA'},
+  {TokenAddress:B,TokenQuantity:'2000000000000000000',TokenDivisor:'18',TokenSymbol:'BBB'}]})});
+ let asked=null;
+ const lookup=async addresses=>{asked=addresses;return new Map([[B,{symbol:'BBB',price:5,logo:'https://x/b.png'}]]);};
+ try{
+  // A wallet of its own: answers are cached per address, and reusing one would read the earlier reply.
+  const d=await walletHoldings('0x'+'7'.repeat(40),lookup);
+  assert.deepEqual(asked.sort(),[A,B].sort(),'every holding is asked about, not just the first page');
+  const b=d.tokens.find(t=>t.address===B);
+  assert.equal(b.value,10);
+  assert.equal(b.logo,'https://x/b.png','a holding that is listed keeps its picture');
+  assert.equal(d.tokens.find(t=>t.address===A).value,null,'one we cannot price stays unpriced');
+ }finally{globalThis.fetch=original;}
+});

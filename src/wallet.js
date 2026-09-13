@@ -60,14 +60,23 @@ export async function nativeBalance(address){
  return wei==null?null:Number(wei)/1e18;
 }
 
-export async function walletHoldings(address,prices=new Map()){
+// The market rows are looked up for the addresses actually held, rather than taken from the top of the
+// list: the list answers in pages, so pricing a wallet from it left everything past the first page with no
+// price and no logo, however ordinary the holding was.
+export async function walletHoldings(address,lookup){
  const wallet=String(address||'').toLowerCase();
  if(!/^0x[0-9a-f]{40}$/.test(wallet))throw Error('Invalid wallet address');
  const errors={};
  let tokens=[];
  try{
   const payload=await cachedJson(EXPLORER+'addresstokenbalance&address='+wallet,60000);
-  if(payload?.status==='1'||Array.isArray(payload?.result))tokens=shapeHoldings(payload.result,prices);
+  if(payload?.status==='1'||Array.isArray(payload?.result)){
+   const held=shapeHoldings(payload.result,new Map());
+   const prices=typeof lookup==='function'
+    ?await lookup(held.map(t=>t.address)).catch(()=>new Map())
+    :(lookup instanceof Map?lookup:new Map());
+   tokens=shapeHoldings(payload.result,prices);
+  }
   else errors.tokens=String(payload?.result||'no balances returned');
  }catch(e){errors.tokens=e.message;}
  const usdc=await nativeBalance(wallet).catch(()=>null);

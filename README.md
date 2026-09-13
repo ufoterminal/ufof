@@ -228,6 +228,9 @@ Market overview'da yakılan arz gösterilir. Zincirden okunur, besleme verisine 
 
 ## Cüzdan bakiyeleri
 
+Fiyat ve logo, cüzdanın gerçekten tuttuğu adresler için ayrıca sorulur. Öncesinde listenin ilk sayfasından alınıyordu; liste sayfa sayfa cevap verdiği için o sayfada olmayan her varlık fiyatsız ve logosuz görünüyordu, ki bu sıradan bir cüzdanda çoğu satır demekti.
+
+
 Her satır bakiyenin yanında fiyatı, günlük değişimi, dolar değerini ve cüzdandaki payını gösterir. Başlıkta toplam değer, altında ne kadarının tokende ne kadarının USDC'de olduğu yazar. Fiyatını bilmediğimiz token bakiyesiyle görünür, değeri ve payı boş kalır; sıfır ya da tahmin yazılmaz.
 
 Kapsam kontrolü: bir cüzdan için explorer'ın verdiği listeyle, en hacimli kırk tokenin bakiyesini zincirden tek tek okuyarak karşılaştırdım, fazladan hiçbir varlık çıkmadı. Yani liste eksik değil.
