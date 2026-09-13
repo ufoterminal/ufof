@@ -101,10 +101,16 @@ function chartScale(t){
 function withLivePrice(candles,price,seconds){
  if(!candles.length||!valid(price)||!(price>0))return candles;
  const last=candles[candles.length-1];
- const open=seconds?last.bucket+seconds>Math.floor(Date.now()/1000):true;
- if(!open)return candles;
- const rest=candles.slice(0,-1);
- return [...rest,{...last,close:price,high:Math.max(last.high,price),low:Math.min(last.low,price)}];
+ const now=Math.floor(Date.now()/1000);
+ const open=seconds?last.bucket+seconds>now:true;
+ if(open)return [...candles.slice(0,-1),{...last,close:price,high:Math.max(last.high,price),low:Math.min(last.low,price)}];
+ // The last candle has closed and nothing has traded since. The current period is still worth drawing at
+ // the price we are showing: without it a minute chart ended at an older price while a day chart ended at
+ // the live one, and the same token read differently on every timeframe.
+ if(!seconds)return candles;
+ const bucket=Math.floor(now/seconds)*seconds;
+ if(bucket<=last.bucket)return candles;
+ return [...candles,{bucket,open:last.close,high:Math.max(last.close,price),low:Math.min(last.close,price),close:price,volume:0}];
 }
 
 const TIMEFRAME_SECONDS={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};

@@ -102,6 +102,11 @@ Kalan dış bağlantılar: her padin kendi API'si (Tolly, Sharc, CircleWarp, Arc
 
 ## Fiyat tutarlılığı (grafik)
 
+Her zaman dilimi aynı fiyatla biter. Son mum kapanmışsa ve o dönemde işlem olmamışsa, şimdiki döneme ait açık mum gösterilen fiyatla çizilir; bu olmadan dakikalık grafik eski bir fiyatla, günlük grafik canlı fiyatla bitiyordu ve aynı token her zaman diliminde farklı okunuyordu. Ölçüm: ARGUS'ta 1m, 15m, 1h ve 1d kapanışı birebir aynı.
+
+Token detayı da artık bayatsa yeniden kurulur (`DETAIL_MAX_AGE_MS`, varsayılan 12 saniye). Önceden yalnızca arka plan işçisi tazeliyordu, bu yüzden işlem listesi dakikalarca eski kalabiliyordu ve her zaman dilimi kendi anında hazırlandığı için birbirini tutmuyordu.
+
+
 Devam eden mum, başlıkta gösterilen canlı fiyatla kapanır. Öncesinde grafiğin son mumu kaydedilmiş anlık görüntüden geliyordu ve her zaman diliminin görüntüsü kendi anında hazırlandığı için hem başlıkla hem birbirleriyle çelişiyordu; MC ölçeği fiyattan türediği için fark orada da görünüyordu. Yalnızca henüz kapanmamış mum düzeltilir, o da zaten gösterdiğimiz fiyata. Ölçüm: LONG ve ARGUS'ta 1h ve 1d mum kapanışı Market overview'daki market değeriyle birebir aynı.
 
 ## Token metadatası
