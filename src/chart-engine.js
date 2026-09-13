@@ -54,7 +54,9 @@ async function sync(source,token,seed,poolAddress,descriptor){
  await init();
  let state=(await q('SELECT state FROM chart_sync WHERE source=$1 AND token=$2',[source,token]))[0]?.state||{};
  if(state.rpc&&state.rpc.schema!==3){state={...state,rpc:null,updated:0,rpcRetryAt:0};}
- const refresh=hasPagedHistory(source)&&!state.complete?5000:30000;
+ // How soon the pool is read again for new swaps. Half a minute was long enough that a trade could sit
+ // unseen while someone watched the page.
+ const refresh=hasPagedHistory(source)&&!state.complete?5000:Math.max(3000,Number(process.env.CHART_REFRESH_MS||10000));
  if(state.updated>Date.now()-refresh)return state;
  if(!hasPagedHistory(source))await save(source,token,seed.map(t=>chartTrade('normalized',t)));
  // The chain is read for any source that cannot supply the rest itself: one with no paged history at all,

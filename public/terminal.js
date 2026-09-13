@@ -321,5 +321,8 @@ if(wallet){walletShell();loadWallet();}
 else if(address){detailShell();loadDetail();
  app.addEventListener('click',e=>{const b=e.target.closest('[data-panel]');if(b)showPanel(b.dataset.panel);});
 }else{listShell();loadList();}
-setInterval(()=>{if(!document.hidden){if(address)loadDetail();else loadList();}},15000);
+// An open token page is refreshed more often than the market list: it is the page someone watches trade
+// by trade, and a quarter of a minute between updates reads as the site being behind.
+setInterval(()=>{if(!document.hidden&&!address)loadList();},15000);
+setInterval(()=>{if(!document.hidden&&address)loadDetail();},6000);
 setInterval(()=>{if(!document.hidden&&address&&currentDetail?.cache?.pending)loadDetail();},3000);

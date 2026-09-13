@@ -100,6 +100,10 @@ DYOR beslemesi ve RadarDex'in Uniswap keşif sayfaları kaldırıldı. Uniswap v
 
 Kalan dış bağlantılar: her padin kendi API'si (Tolly, Sharc, CircleWarp, Archemist, pools.trade, RadarDex kendi padi için), zincir uçları ve holder listesi için explorer. Padin kendi verisini padin kendisinden almak zaten doğru olan.
 
+## Canlılık
+
+Token sayfası kendini yeniler, sayfayı elle yenilemek gerekmez: altı saniyede bir detay çekilir (piyasa listesi on beş saniyede bir). Havuzun yeni işlemleri de daha sık okunur (`CHART_REFRESH_MS`, varsayılan 10 saniye); önceden yarım dakikaydı ve bu, biri sayfaya bakarken işlemin görünmeden beklemesi demekti. Ölçüm: açık bir token sayfası otuz saniyede altı kez güncellendi ve işlem listesi kendiliğinden doldu.
+
 ## Fiyat tutarlılığı (grafik)
 
 Her zaman dilimi aynı fiyatla biter. Son mum kapanmışsa ve o dönemde işlem olmamışsa, şimdiki döneme ait açık mum gösterilen fiyatla çizilir; bu olmadan dakikalık grafik eski bir fiyatla, günlük grafik canlı fiyatla bitiyordu ve aynı token her zaman diliminde farklı okunuyordu. Ölçüm: ARGUS'ta 1m, 15m, 1h ve 1d kapanışı birebir aynı.
