@@ -102,6 +102,9 @@ Kalan dış bağlantılar: her padin kendi API'si (Tolly, Sharc, CircleWarp, Arc
 
 ## Canlılık
 
+Elimizde olan hemen verilir. Bayat bir detay, isteğin önünde değil arkasında yeniden kurulur; sayfa zaten altı saniyede bir kendini çektiği için taze hali kendiliğinden gelir. Öncesinde yeniden kurmayı beklemek, yeniden başlatmadan sonraki her açılışta mumlar veritabanında dururken boş grafik göstermek demekti. Ölçüm: veritabanı yerinde kalarak yeniden başlatıldığında ilk istek 0,05 saniyede mumlarıyla döndü.
+
+
 Token sayfası kendini yeniler, sayfayı elle yenilemek gerekmez: altı saniyede bir detay çekilir (piyasa listesi on beş saniyede bir). Havuzun yeni işlemleri de daha sık okunur (`CHART_REFRESH_MS`, varsayılan 10 saniye); önceden yarım dakikaydı ve bu, biri sayfaya bakarken işlemin görünmeden beklemesi demekti. Ölçüm: açık bir token sayfası otuz saniyede altı kez güncellendi ve işlem listesi kendiliğinden doldu.
 
 ## Fiyat tutarlılığı (grafik)

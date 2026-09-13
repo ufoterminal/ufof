@@ -148,6 +148,15 @@ export function withLiveFigures(market,row){
  return merged;
 }
 
+// Rebuilds in the background, one per token and timeframe at a time.
+const rebuilding=new Set();
+function refreshDetail(address,tf){
+ const key=address+':'+tf;
+ if(rebuilding.has(key)||rebuilding.size>6)return;
+ rebuilding.add(key);
+ buildMarket(address,tf).catch(()=>null).finally(()=>rebuilding.delete(key));
+}
+
 export async function getMarket(address,tf='1h'){
  if(!/^0x[0-9a-f]{40}$/i.test(address)||!['1m','5m','15m','1h','4h','1d'].includes(tf))throw Error('Invalid market request');
  address=address.toLowerCase();
@@ -160,14 +169,17 @@ export async function getMarket(address,tf='1h'){
  // timeframe was prepared at its own moment and therefore disagreed with the others.
  const age=saved?Date.now()-saved.updated:Infinity;
  const stale=age>Math.max(2000,Number(process.env.DETAIL_MAX_AGE_MS||12000));
- if(saved&&!stale)return {...saved.payload,market:withLiveFigures(saved.payload.market,row),
-  cache:{updatedAt:saved.updated,stale:false}};
- if(stale){
-  const fresh=await buildMarket(address,tf).catch(()=>null);
-  if(fresh)return {...fresh,market:withLiveFigures(fresh.market,row),cache:{updatedAt:Date.now(),stale:false}};
+ // What we already hold is served straight away, and a stale one is rebuilt behind the request instead of
+ // in front of it. Waiting for the rebuild made every page load after a restart sit on an empty chart,
+ // even though the candles were already in the database; the page polls, so the fresh build arrives on its
+ // own a moment later.
+ if(saved){
+  if(stale)refreshDetail(address,tf);
+  return {...saved.payload,market:withLiveFigures(saved.payload.market,row),
+   cache:{updatedAt:saved.updated,stale:age>60000}};
  }
- if(saved)return {...saved.payload,market:withLiveFigures(saved.payload.market,row),
-  cache:{updatedAt:saved.updated,stale:age>60000}};
+ const first=await buildMarket(address,tf).catch(()=>null);
+ if(first)return {...first,market:withLiveFigures(first.market,row),cache:{updatedAt:Date.now(),stale:false}};
  return {market:{...mapMarket(row),price:null},timeframe:tf,candles:[],closes:[],trades:[],chartMode:'candles',supported:true,
  history:{loading:true,complete:false},errors:{chartNotice:'Historical data is being prepared in the background.'},cache:{pending:true}};
 }
