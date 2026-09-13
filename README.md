@@ -77,6 +77,11 @@ Arama sonuçlarında token logosu ve market değeri gösterilir. Birim fiyat yer
 
 ## Bağımlılıklar
 
+Kalan padlerin fabrikaları zincirde bulundu ve `KNOWN_PAD_FACTORIES` altında kayıtlı: Tolly `0xcad7ee36...9c8b`, Sharc üç fabrika, CircleWarp `0x0dcad158...1255`, Archemist `0x44b10910...9774`, pools.trade `0x0000ffff...19c0`, Noxa `0xe7d4e640...d372`, RadarDEX iki fabrika. Tarama denendi ve çalıştı: RadarDEX 2.387, DYOR 1.370, Tolly 749, Long 246, Sharc 168, CircleWarp 154, pools.trade 84, o1 43 launch.
+
+Bunları kaynağa bağlamak tek satırlık bir iş değil: padlerin alan eşlemesi hâlâ pad kimliğine bağlı ve kayıt yolunu açtığımda mevcut eşlemeyi devralıp sekiz testi kırdı. Ayrıştırma işi ayrıca ve dikkatle yapılmalı, o yüzden fabrikalar kayıtlı duruyor ama devrede değil.
+
+
 DYOR artık kendi API'siyle değil zincirdeki fabrikasından okunuyor: `0x80b42aed...2bf4` (güncel) ve `0xdfef2f90...ddc4` (eski), her biri kendi launch olayıyla. Tarama 4.163 launch buldu. Bu padin piyasa beslemesi hiç kullanılmıyor; fiyat, hacim ve işlem sayısı kendi zincir okumamızdan geliyor, besleme yalnızca aidiyet için bile gerekmiyor. Bir padin beslemesi olmayabilir, kod bunu artık normal bir durum olarak kabul ediyor.
 
 Launch adları önce kendi indekslediğimiz token tablosundan alınır, orada yoksa tur başına sınırlı sayıda kontrattan okunur. Adı henüz bilinmeyen launch listeye girmez, boş satır göstermeyiz.
