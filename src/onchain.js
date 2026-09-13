@@ -334,6 +334,24 @@ export async function readBurned(token,decimals,supplyRaw){
 }
 
 // The addresses that are a market rather than a person, so a holder list can say so.
+// The market we would read a token's history from, taken from our own discovery rather than from a feed.
+// The busiest pool wins; a v4 pool comes with the key material its reader needs, so v4 tokens are covered
+// as well as v2 and v3.
+export async function bestPool(token){
+ await init();
+ const address=String(token||'').toLowerCase();
+ const rows=await q(`SELECT p.pool,p.version,p.fee,p.tick_spacing,p.hooks,
+   (SELECT COUNT(*) FROM onchain_trades t WHERE t.pool=p.pool)::int AS trades
+  FROM onchain_pools p WHERE p.token=$1 ORDER BY trades DESC, p.created_block ASC LIMIT 1`,[address]);
+ const pool=rows[0];
+ if(!pool)return null;
+ return {
+  pool:pool.pool,
+  descriptor:pool.version==='v4'?{version:'v4',quoteToken:USDC,nativeQuote:false,
+   feeTier:Number(pool.fee),tickSpacing:Number(pool.tick_spacing),hooks:pool.hooks}:null
+ };
+}
+
 export async function poolAddresses(token){
  await init();
  const rows=await q("SELECT pool,version FROM onchain_pools WHERE token=$1 AND version<>'v4'",[String(token||'').toLowerCase()]);

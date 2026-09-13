@@ -83,3 +83,12 @@ test('a source that never answers cannot hold up the whole sync',async()=>{
  assert.ok(Date.now()-started<2000,'it gives up quickly rather than waiting on the source');
  assert.equal(await withDeadline(Promise.resolve('done'),'fastpad',150),'done','a source that answers is untouched');
 });
+
+test('a search puts the biggest market first, but an exact match still leads',()=>{
+ const mk=(id,symbol,mcap,volume)=>token(id,{symbol,marketCap:mcap,volume});
+ const all=[mk(1,'ARC',500,900),mk(2,'ARC',9000,10),mk(3,'ARCADE',50000,5000)];
+ const rows=selectMarkets(all,{q:'arc'},now).rows;
+ assert.deepEqual(rows.map(r=>r.marketCap),[9000,500,50000],'exact ticker matches lead, ordered by market cap');
+ const exact=selectMarkets(all,{q:all[0].address},now).rows;
+ assert.equal(exact[0].address,all[0].address,'an address match still comes first whatever it is worth');
+});

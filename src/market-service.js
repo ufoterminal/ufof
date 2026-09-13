@@ -51,7 +51,9 @@ export function selectMarkets(all,options={},now=Math.floor(Date.now()/1000)){
  if(options.mode==='watch'){const watch=new Set(String(options.addresses||'').toLowerCase().split(',').slice(0,100));rows=rows.filter(r=>watch.has(r.address));}
  for(const [option,key] of [['minLiquidity','liquidity'],['minVolume','volume']])if(number(options[option])>0)rows=rows.filter(r=>r[key]!=null&&r[key]>=Number(options[option]));
  const keys=new Set(['price','marketCap','liquidity','volume','transactions','holders','createdAt','change']);
- const sort=keys.has(options.sort)?options.sort:options.mode==='new'?'createdAt':['gainers','losers'].includes(options.mode)?'change':'volume';
+ // A search is ranked by market cap rather than by the day's volume: dozens of contracts share a ticker,
+ // and what tells the real market apart from a copy is what it is worth, not how busy it was today.
+ const sort=keys.has(options.sort)?options.sort:options.mode==='new'?'createdAt':['gainers','losers'].includes(options.mode)?'change':query?'marketCap':'volume';
  const direction=options.dir==='asc'||(!options.dir&&options.mode==='losers')?1:-1;
  const value=r=>sort==='change'?number(r.changes['24h']):r[sort];
  rows.sort((a,b)=>{

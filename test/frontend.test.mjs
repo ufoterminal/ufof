@@ -98,3 +98,9 @@ test('USDC carries its own mark on a wallet page',()=>{
  assert.ok(terminal.includes('usdcMark()'),'and used for the gas token row');
  assert.ok(!/token-icon">\$</.test(terminal),'the bare dollar sign is gone');
 });
+
+test('search results are ranked by what a token is worth, not its unit price',()=>{
+ const line=terminal.split('\n').find(l=>l.includes("search-results').innerHTML=asWallet"));
+ assert.ok(line.includes('valid(t.marketCap)?usd(t.marketCap)'),'market cap is shown');
+ assert.ok(!line.includes('price(t.price)'),'the unit price is not');
+});

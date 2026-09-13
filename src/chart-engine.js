@@ -1,6 +1,7 @@
 import {q} from './db.js';
 import {cachedJson,number} from './direct.js';
 import {poolHistory} from './rpc-history.js';
+import {bestPool} from './onchain.js';
 import {SOURCES} from '../public/sources.js';
 
 const frames={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
@@ -105,8 +106,12 @@ export async function ownChart(source,token,tf,remote,market={}){
  const seconds=frames[tf];if(!seconds)throw Error('Invalid chart timeframe');
  const key=source+':'+token;let state={},failure;
  try{
-  const d=remote.detail||{},poolAddress=d.bestPool||d.pool_address||d.token?.pool_address||d.pool||market.pool;
-  const descriptor=Array.isArray(d.pools)?d.pools.find(p=>p.pool===poolAddress):null;
+  const d=remote.detail||{};
+  // Our own discovery is asked first for the market to read: it covers every token we list, so a chart no
+  // longer depends on a feed naming the pool.
+  const own=await bestPool(token).catch(()=>null);
+  const poolAddress=own?.pool||d.bestPool||d.pool_address||d.token?.pool_address||d.pool||market.pool;
+  const descriptor=own?.descriptor||(Array.isArray(d.pools)?d.pools.find(p=>p.pool===poolAddress):null);
   if(!flights.has(key)&&flights.size<4)flights.set(key,sync(source,token,remote.trades||[],poolAddress,descriptor).finally(()=>flights.delete(key)));
   if(!flights.has(key))throw Error('History workers busy');
   let timer;

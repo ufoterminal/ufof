@@ -73,7 +73,7 @@ Bir tuzak vardı: düğüm, istekte verilen topic filtresini uygulamadan fabrika
 
 ArgusPad token listesi yayınlamıyor; launch listesi Portal kontratlarında duruyor. Hangi tokenin ArgusPad'e ait olduğunu `src/argus.js` zincirden okuyarak belirler. Portal adresleri ve sırası ArgusPad'in kendi entegrasyon dosyasından alındı (https://arguspad.io/argus-v4.json). Bir satır ancak hem beslemede `launchpad=argus` etiketi taşıyorsa hem de bir Portal onu listeliyorsa kabul edilir. Zincirde olup beslemede henüz görünmeyen yeni bir launch da listeye girer: adı ve sembolü token kontratından okunur, fiyat ve hacim bilinmiyor olarak kalır, sıfır yazılmaz. Her yenilemede Portal başına yalnızca yeni indeksler okunur. Arc JSON-RPC toplu isteği reddettiği için istekler tek tek gider. Doğrulama (12 Eylül 2026): zincirde 42 launch (16+1+22+1+1+1), beslemede 42, hepsinde logo.
 
-Arama sonuçlarında token logosu gösterilir. Logosu olmayan veya resmi yüklenmeyen tokende iki harfli işaret kalır.
+Arama sonuçlarında token logosu ve market değeri gösterilir. Birim fiyat yerine market değeri yazılır, çünkü aynı ticker'ı paylaşan onlarca kontrat arasında hangisinin gerçek piyasası olduğunu ayırt ettiren şey odur. Market değeri bilinmeyen tokende çizgi görünür. Sonuçlar da market değerine göre sıralanır, büyükten küçüğe; tam eşleşen adres veya sembol yine en üstte kalır, çünkü aradığın şeyin kendisi neye değerse değsin ilk sırada olmalı. Logosu olmayan veya resmi yüklenmeyen tokende iki harfli işaret kalır.
 
 ## Bağımlılıklar
 
@@ -138,6 +138,9 @@ Site adı UFO Screener. Üstte UFO, altında SCREENER yazar. Yanındaki figür S
 Başlıktaki fiyat ve market değeri her zaman diliminde aynıdır. Eskiden bu rakam o zaman diliminin son mumundan okunuyordu; her zaman diliminin anlık görüntüsü kendi anında hazırlandığı için aynı token 1m'de bir fiyat, 1d'de başka bir fiyat gösteriyordu ve MC ölçeği de onunla birlikte kayıyordu. Artık rakam piyasa satırından gelir ve sayfa her servis edildiğinde tazelenir. Grafik kendi kaydettiği akışı göstermeye devam eder, başlık ise en güncel değeri.
 
 ## Grafik geçmişi
+
+Grafiğin okuyacağı havuz artık kendi keşfimizden gelir. Önceden havuz adresi feed'in verdiği detaya bağlıydı; feed o tokeni tanımıyorsa veya cevap vermiyorsa zincirden geçmiş okunamıyordu. Artık önce kendi havuz kaydımıza bakılır, v4 havuzlarında okuyucunun ihtiyacı olan anahtar bilgisi de oradan verilir, feed yalnızca yedek kalır.
+
 
 Zincirden geriye okuma hızlandırıldı. Üç ayrı sorun vardı. Birincisi, her log için bloğun zamanı ayrıca soruluyordu; Arc logları zaten zaman damgası taşıdığı için blok başına bir istek tamamen kalktı. İkincisi, tur başına tek pencere geriye iniliyordu; artık varsayılan on pencere (`RPC_HISTORY_WINDOWS`), art arda ve sırayla, yani imleç kesintisiz ilerliyor. Üçüncüsü, uçlardan biri kontrat okumasını ve eski log sorgusunu taşıma hatası değil RPC hatası olarak reddediyordu; yedek zincir bunu geçerli cevap sayıp orada duruyordu, artık uçlar tek tek deneniyor ve ilk gerçekten cevap veren kullanılıyor. Ayrıca havuzun token bilgileri aynı anda değil sırayla okunuyor, birlikte gönderildiğinde ilk uç JSON-RPC olmayan bir cevap veriyordu.
 

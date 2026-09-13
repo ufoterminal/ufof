@@ -63,7 +63,7 @@ async function search(){
   // An address that is not a token in the list is still worth something: it is probably a wallet.
   const asWallet=/^0x[0-9a-fA-F]{40}$/.test(query)&&!d.rows.some(t=>t.address===query.toLowerCase())
    ?'<a href="/wallet/'+esc(query.toLowerCase())+'"><span class="search-token"><span class="token-icon">\u25ce</span><span><b>Wallet</b><small>'+esc(short(query))+' \u00b7 see what it holds</small></span></span></a>':'';
-  $('search-results').innerHTML=asWallet+d.rows.map(t=>'<a href="/token/'+esc(t.address)+'"><span class="search-token">'+icon(t)+'<span><b>'+esc(t.symbol)+'</b><small>'+esc(t.name)+' · '+esc(sourceName(t.source))+'</small></span></span><span class="mono">'+price(t.price)+'</span></a>').join('')||(asWallet||'<div class="side-note" style="padding:12px">No indexed token found. Coverage depends on the connected sources.</div>');
+  $('search-results').innerHTML=asWallet+d.rows.map(t=>'<a href="/token/'+esc(t.address)+'"><span class="search-token">'+icon(t)+'<span><b>'+esc(t.symbol)+'</b><small>'+esc(t.name)+' · '+esc(sourceName(t.source))+'</small></span></span><span class="mono" title="Market cap">'+(valid(t.marketCap)?usd(t.marketCap):'\u2014')+'</span></a>').join('')||(asWallet||'<div class="side-note" style="padding:12px">No indexed token found. Coverage depends on the connected sources.</div>');
  }catch(e){if(e.name!=='AbortError'&&seq===searchSeq)$('search-results').textContent='Search unavailable. Try again.';}
 }
 $('global-search').addEventListener('input',()=>{searchSeq++;searchController?.abort();clearTimeout(searchTimer);searchTimer=setTimeout(search,220);});
