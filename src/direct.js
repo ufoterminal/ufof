@@ -48,6 +48,25 @@ export async function cachedJson(url,ttl=30000){
 }
 export const number=x=>x==null||x===''||!Number.isFinite(Number(x))?null:Number(x);
 const unix=x=>{if(x==null||x==='')return null;const n=typeof x==='string'&&!/^\d+(?:\.\d+)?$/.test(x)?Date.parse(x):Number(x);return Number.isFinite(n)?Math.floor(n>1e12?n/1000:n):null};
+// Reads names for launches nothing has described yet, newest first, a bounded number per turn. This runs
+// in the background so the market round never waits on the chain.
+export async function namePadLaunches(limit=PAD_META_PER_PASS){
+ const pending=[];
+ for(const id of Object.keys(PAD_REGISTRIES)){
+  const rows=await padLaunches(id).catch(()=>[]);
+  for(const r of rows)pending.push({address:r.token,at:r.at==null?null:Number(r.at)});
+ }
+ if(!pending.length)return 0;
+ const known=await knownNames(pending.map(r=>r.address)).catch(()=>new Map());
+ const unnamed=pending.filter(r=>!known.get(r.address)?.symbol).sort((a,b)=>(b.at||0)-(a.at||0)).slice(0,limit);
+ let named=0;
+ for(const r of unnamed){
+  const meta=await launchMeta(r.address).catch(()=>null);
+  if(meta?.symbol)named++;
+ }
+ return named;
+}
+
 export async function ownList(id){
  if(PAD_REGISTRIES[id]){
   // The registry is filled by a background task; a sync only reads it. A pad's market feed is optional:
@@ -61,12 +80,9 @@ export async function ownList(id){
   // A launch the feed has not picked up is named from its own contract. Reading those one after another
   // took a sync from seconds to many minutes on a fresh database, so a bounded batch is read in parallel
   // each pass and the rest are named on later passes.
-  // Whatever our own indexing already named costs nothing to reuse.
+  // Names come from what has already been read, never from the chain in the middle of a round: a market
+  // round must be a database read. Anything still unnamed is picked up by namePadLaunches in the worker.
   const meta=await knownNames(rows.map(r=>r.address)).catch(()=>new Map());
-  const unnamed=rows.filter(r=>!listed.has(r.address)&&!meta.get(r.address)?.symbol).slice(0,PAD_META_PER_PASS);
-  // The rest are read one token at a time. Reading a batch together meant dozens of calls in flight at
-  // once, which the endpoints answer badly enough to hang the whole source.
-  for(const r of unnamed)meta.set(r.address,await launchMeta(r.address).catch(()=>({})));
   return {...payload,registry:rows.map(r=>({...(meta.get(r.address)||{}),...r})),mirror:true};
  }
  if(id==='argus'){

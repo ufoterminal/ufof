@@ -4,6 +4,8 @@ import {frames,requestSnapshot,claimJob,finishJob,publishSnapshot,initSnapshots}
 import {drainHolderMaps,seedHolderMaps} from './holder-map.js';
 import {scanPadsInBackground} from './pad-registry.js';
 import {readPadMetadata,readDiscoveredMetadata} from './token-metadata.js';
+import {onchainSync} from './onchain.js';
+import {namePadLaunches} from './direct.js';
 import {refreshRegistryInBackground} from './argus.js';
 let stopped=false;
 export async function seedJobs(){
@@ -37,9 +39,16 @@ export function startWorker(){
  }
  // The chain-backed pad registries, kept out of the sync path.
  async function registries(){
-  try{await scanPadsInBackground();await refreshRegistryInBackground();await readPadMetadata();await readDiscoveredMetadata();}catch(e){console.error('[registries]',e.message);}
+  try{await scanPadsInBackground();await refreshRegistryInBackground();await namePadLaunches();await readPadMetadata();await readDiscoveredMetadata();}catch(e){console.error('[registries]',e.message);}
   later(registries,15000);
  }
+ // Following the chain: new pools and new swaps, continuously, apart from the market round.
+ async function indexer(){
+  let worked=false;
+  try{const p=await onchainSync();worked=!!(p.pools||p.trades);}catch(e){console.error('[indexer]',e.message);}
+  later(indexer,worked?1000:5000);
+ }
+ indexer();
  registries();
  maps();
  for(let i=0;i<Math.max(1,Math.min(4,Number(process.env.INDEXER_CONCURRENCY)||2));i++)run();

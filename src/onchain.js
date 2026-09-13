@@ -195,8 +195,14 @@ async function saveTrades(rows){
 // Name, symbol, decimals and supply, read from the token itself. Read once; these do not change.
 export async function readTokenMeta(limit=25){
  await init();
- const pending=await q(`SELECT DISTINCT p.token FROM onchain_pools p LEFT JOIN onchain_tokens t ON t.address=p.token
-  WHERE t.address IS NULL OR t.decimals IS NULL ORDER BY p.token LIMIT $1`,[limit]);
+ // Tokens that have actually traded are described first, then the most recently created. Reading them in
+ // address order meant a market somebody is trading could wait behind thousands of pools that never did.
+ const pending=await q(`SELECT p.token,
+   (SELECT COUNT(*) FROM onchain_trades s WHERE s.token=p.token)::int AS trades,
+   MAX(p.created_block) AS newest
+  FROM onchain_pools p LEFT JOIN onchain_tokens t ON t.address=p.token
+  WHERE t.address IS NULL OR t.decimals IS NULL
+  GROUP BY p.token ORDER BY trades DESC, newest DESC LIMIT $1`,[limit]);
  const out=[];
  for(const {token} of pending){
   const one=fn=>rpc().readContract({address:token,abi:erc20,functionName:fn}).catch(()=>null);

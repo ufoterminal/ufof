@@ -75,7 +75,15 @@ ArgusPad token listesi yayınlamıyor; launch listesi Portal kontratlarında dur
 
 Arama sonuçlarında token logosu ve market değeri gösterilir. Birim fiyat yerine market değeri yazılır, çünkü aynı ticker'ı paylaşan onlarca kontrat arasında hangisinin gerçek piyasası olduğunu ayırt ettiren şey odur. Market değeri bilinmeyen tokende çizgi görünür. Sonuçlar da market değerine göre sıralanır, büyükten küçüğe; tam eşleşen adres veya sembol yine en üstte kalır, çünkü aradığın şeyin kendisi neye değerse değsin ilk sırada olmalı. Logosu olmayan veya resmi yüklenmeyen tokende iki harfli işaret kalır.
 
-## Kaynak birleştirme sırası
+## İndeksleme ve liste turu ayrı
+
+Zinciri takip etmek ile piyasa listesini kurmak artık ayrı işler. İndeksleyici arka planda sürekli çalışır: yeni havuzlar fabrikalardan düşer, yeni swap'lar baştan okunur, launch adları ve metadata kendi ritminde tamamlanır. Piyasa turu ise yalnızca veritabanını okur.
+
+Öncesinde ikisi aynı turdaydı ve tur, içindeki en yavaş taramanın süresi kadar sürüyordu; sayfada "Updated 7m ago" görmenin sebebi buydu. Ölçüm: ayrımdan sonra ilk tur 15 saniyede tamamlandı ve turlar arası süre 27-29 saniye, yani ayarlanan aralığın kendisi.
+
+
+Zincirden okuma, işlem görmüş tokenleri önce tanımlar; sonra en yeni açılan havuzları. Öncesinde adres sırasına göre gidiliyordu, yani birinin o an alıp sattığı bir piyasa hiç işlem görmemiş binlerce havuzun arkasında bekleyebiliyordu. Padlerin adlandırma sırası da en yeni launch'tan başlar, çünkü eski launch'lar çoğunlukla bitmiştir. Ölçüm: yüz elli saniyede 179 tokenin 50'si tanımlandı ve listenin en hacimli on ikisinin hepsinde fiyat vardı.
+
 
 Kendi zincir okumamız senkronun sonunda çalışır, padlerden sonra. Bir pad satırı yalnızca kendi bildiğini yazar: fabrikadan gelen aidiyet, ad ve doğum zamanı. Fiyat, hacim ve tazelik alanlarını boş yazmayı bıraktı; öncesinde bunları null olarak yazıp kendi ölçtüğümüz rakamların üstünü siliyordu ve sayfa, üç dakika önceki bir işlemin yanında kırk dakikalık bir anlık görüntü gösteriyordu.
 
