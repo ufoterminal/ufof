@@ -92,3 +92,9 @@ test('an address that is not a listed token is offered as a wallet',()=>{
  assert.ok(terminal.includes("!d.rows.some(t=>t.address===query.toLowerCase())"),'a token address still shows the token first');
  assert.ok(terminal.includes("id=\"wallet-rows\""),'the wallet page renders holdings');
 });
+
+test('USDC carries its own mark on a wallet page',()=>{
+ assert.ok(terminal.includes('function usdcMark()'),'the mark is drawn inline');
+ assert.ok(terminal.includes('usdcMark()'),'and used for the gas token row');
+ assert.ok(!/token-icon">\$</.test(terminal),'the bare dollar sign is gone');
+});

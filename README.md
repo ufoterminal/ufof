@@ -137,6 +137,12 @@ Site adı UFO Screener. Üstte UFO, altında SCREENER yazar. Yanındaki figür S
 
 Başlıktaki fiyat ve market değeri her zaman diliminde aynıdır. Eskiden bu rakam o zaman diliminin son mumundan okunuyordu; her zaman diliminin anlık görüntüsü kendi anında hazırlandığı için aynı token 1m'de bir fiyat, 1d'de başka bir fiyat gösteriyordu ve MC ölçeği de onunla birlikte kayıyordu. Artık rakam piyasa satırından gelir ve sayfa her servis edildiğinde tazelenir. Grafik kendi kaydettiği akışı göstermeye devam eder, başlık ise en güncel değeri.
 
+## Grafik geçmişi
+
+Grafik bir tokenin ilk gününden başlar, ama geçmiş anında değil zamanla dolar. Sayfalı geçmiş yayınlayan kaynaklarda (Sharc, CircleWarp) sayfalar sırayla çekilir; diğerlerinde geçmiş havuzun kendi swap loglarından geriye doğru okunur. İkisi de tur tur ilerlediği için yeni açılmış bir token sayfası önce kısa bir grafikle gelir, sonra geriye uzar.
+
+Bir eksik vardı ve kapatıldı: zincirden geriye okuma yalnızca sayfalı geçmişi olmayan kaynaklar için çalışıyordu. Sayfalı bir kaynağın API'si eski sayfaları vermeyi kestiğinde grafik orada kalıyor ve token ömrünün ortasından başlıyordu. Artık sayfalar bittiğinde veya durduğunda zincir devreye giriyor.
+
 ## Grafik ölçeği
 
 Grafiğin üstünde Price ve MC düğmeleri var. MC'ye basınca mumlar, çizgi, eksen ve imleç okuması market değerine döner. Çarpan satırın kendi rakamlarından çıkar, market cap bölü fiyat, yani grafik ile Market overview asla çelişmez. Tokenin arzını gösteren bir rakam yoksa ölçek fiyatta kalır ve bunun sebebi yazılır. Seçim adreste taşınır (`?scale=mc`), sayfa yenilenince korunur.
@@ -146,6 +152,8 @@ Grafiğin üstünde Price ve MC düğmeleri var. MC'ye basınca mumlar, çizgi, 
 Market overview'da yakılan arz gösterilir. Zincirden okunur, besleme verisine güvenilmez: yakma adreslerinin (`0x...dead` ve sıfır adresi) bakiyeleri ve toplam arz aynı anda okunup miktar ve yüzde çıkarılır. ARGUS'ta 35,7 milyon ve %3,57 okundu. Okuma başarısız olursa alan bilinmiyor kalır, sıfır yazılmaz. Yakma adresinde bir tam tokenden az toz kalmışsa bu bir yakma sayılmaz ve gösterilmez, çünkü ekranda "0 · 0.00%" olarak görünür ve hiçbir şey anlatmaz.
 
 ## Cüzdan bakiyeleri
+
+USDC satırı kendi işaretiyle görünür. İşaret SVG olarak yerinde çizilir, dışarıdan resim çekilmez: bir istek daha az ve barındıran yer kapandığında kırılacak bir şey yok.
 
 Arama kutusuna bir cüzdan adresi yazılınca sonuçlarda "Wallet" satırı çıkar ve o adresin sayfasına götürür. Sayfa cüzdanın Arc üzerinde tuttuğu USDC'yi ve tokenleri, sitenin başka yerlerde gösterdiği fiyatlarla değerlenmiş olarak listeler; en değerliden başlayarak sıralar, fiyatını bilmediğimiz token bakiyesiyle görünür ama değeri boş kalır, uydurma bir rakam yazılmaz.
 

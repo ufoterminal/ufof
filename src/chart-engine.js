@@ -56,7 +56,11 @@ async function sync(source,token,seed,poolAddress,descriptor){
  const refresh=hasPagedHistory(source)&&!state.complete?5000:30000;
  if(state.updated>Date.now()-refresh)return state;
  if(!hasPagedHistory(source))await save(source,token,seed.map(t=>chartTrade('normalized',t)));
- if(!hasPagedHistory(source)){
+ // The chain is read for any source that cannot supply the rest itself: one with no paged history at all,
+ // and one whose pages have run out or finished. Without this a token older than its provider's window
+ // began mid-life on the chart.
+ const needsChain=!hasPagedHistory(source)||state.complete||state.stalled;
+ if(needsChain){
   if(poolAddress&&(!state.rpcRetryAt||state.rpcRetryAt<Date.now())){
    try{const result=await poolHistory(token,poolAddress,state.rpc,descriptor);
     if(result){await save(source+':rpc-v3',token,result.trades);state.rpc=result.state;state.rpcError=null;}
@@ -87,6 +91,9 @@ async function sync(source,token,seed,poolAddress,descriptor){
    const fingerprint=JSON.stringify(d.trades[0]);if(fingerprint===previous)throw Error('History pagination did not advance');previous=fingerprint;
    await save(source,token,d.trades.map((t,i)=>chartTrade(source,{...t,order:(d.total??first.total)-offset-i})));offset+=d.trades.length;
   }
+  // A provider that stops handing out older pages leaves the history short for good. Noting that here is
+  // what lets the chain backfill take over instead of the chart simply beginning partway through.
+  state.stalled=offset<=(state.offset||size)&&!state.complete;
   state.offset=offset;state.complete=offset>=first.total;
  }
  state.updated=Date.now();
