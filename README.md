@@ -75,7 +75,10 @@ ArgusPad token listesi yayınlamıyor; launch listesi Portal kontratlarında dur
 
 Arama sonuçlarında token logosu ve market değeri gösterilir. Birim fiyat yerine market değeri yazılır, çünkü aynı ticker'ı paylaşan onlarca kontrat arasında hangisinin gerçek piyasası olduğunu ayırt ettiren şey odur. Market değeri bilinmeyen tokende çizgi görünür. Sonuçlar da market değerine göre sıralanır, büyükten küçüğe; tam eşleşen adres veya sembol yine en üstte kalır, çünkü aradığın şeyin kendisi neye değerse değsin ilk sırada olmalı. Logosu olmayan veya resmi yüklenmeyen tokende iki harfli işaret kalır.
 
-## Bağımlılıklar
+## Kaynak birleştirme sırası
+
+Kendi zincir okumamız senkronun sonunda çalışır, padlerden sonra. Bir pad satırı yalnızca kendi bildiğini yazar: fabrikadan gelen aidiyet, ad ve doğum zamanı. Fiyat, hacim ve tazelik alanlarını boş yazmayı bıraktı; öncesinde bunları null olarak yazıp kendi ölçtüğümüz rakamların üstünü siliyordu ve sayfa, üç dakika önceki bir işlemin yanında kırk dakikalık bir anlık görüntü gösteriyordu.
+
 
 Tolly, Sharc, CircleWarp, Archemist, pools.trade, Noxa, RadarDEX, DYOR, ArgusPad, Long ve o1: hepsinin launch listesi artık kendi fabrikalarından zincirden okunuyor, hiçbirinin piyasa beslemesi kullanılmıyor. Fiyat, hacim, işlem sayısı ve değişimler kendi zincir motorumuzdan geliyor.
 

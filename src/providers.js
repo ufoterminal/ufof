@@ -37,13 +37,13 @@ export async function syncExternal(){
  // of the pool factories covers the same ground and does not go dark when somebody else's API does.
  try{const [l,m]=await Promise.all([cachedJson('https://api.radardex.pro/launches?limit=all',900000),cachedJson(feeds.radardex)]);const rows=normalizeRadar(l,m,now);out.push(...rows,...normalizeRadarArchive(l));status.push({id:'radardex',ok:true,count:rows.length,archive_count:normalizeRadarArchive(l).length,market_page:(m.tokens||m.data||m.items||[]).length,total_markets:m.count||null,updated_at:now})}catch(e){status.push({id:'radardex',ok:false,error:e.message,updated_at:now})}
  // The DYOR feed has been dropped: its markets arrive through our own discovery like any other.
+ for(const id of ['tolly','sharc','circlewarp','archemist','pools-trade','noxa','argus','long','o1','dyor']){try{const payload=await withDeadline(ownList(id),id),rows=normalizeDirect(id,payload,now);out.push(...rows);status.push({id,ok:true,count:rows.length,mode:payload.mirror?'live-mirror':'live'})}catch(e){status.push({id,ok:false,error:e.message})}}
  // Our own reading of the chain. It runs last so that where we measured a number ourselves it is the
  // one shown, while logos, socials and pad attribution from the feeds above are left untouched.
  // Our own indexing does more work than any single feed and is the one source worth waiting longer for.
  try{const progress=await withDeadline(onchainSync(),'on-chain sync',Math.max(SOURCE_TIMEOUT,Number(process.env.ONCHAIN_TIMEOUT_MS||240000)));const rows=await onchainMarkets(now);out.push(...rows);
   status.push({id:'onchain',ok:true,count:rows.length,mode:'self-indexed',head:progress.head,new_pools:progress.pools,new_trades:progress.trades});
  }catch(e){status.push({id:'onchain',ok:false,error:e.shortMessage||e.message});}
- for(const id of ['tolly','sharc','circlewarp','archemist','pools-trade','noxa','argus','long','o1','dyor']){try{const payload=await withDeadline(ownList(id),id),rows=normalizeDirect(id,payload,now);out.push(...rows);status.push({id,ok:true,count:rows.length,mode:payload.mirror?'live-mirror':'live'})}catch(e){status.push({id,ok:false,error:e.message})}}
  await persistRecords(out);
  return status;
 }

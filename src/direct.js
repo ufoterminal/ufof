@@ -198,12 +198,13 @@ export function normalizeDirect(id,json,now=Math.floor(Date.now()/1000)){
     // the list with rows that say nothing.
     if(!String(r.symbol||'').trim())continue;
     // Launched on chain, no market numbers yet. Unknown, never zero.
+    // Only what this row actually knows. Writing the market fields as nulls erased the price, volume and
+    // freshness our own indexing had already measured for the same token, which is how a page ended up
+    // showing an hour old snapshot beside a trade from three minutes ago.
     rows.push({address,name:String(r.name||''),symbol:String(r.symbol||''),decimals:number(r.decimals),total_supply:null,
      creation_at:r.at??null,launchpad_id:id,factory:r.factory,
-     metadata:{feed_schema:2,source:id,data_provider:'pad-factory',pad_factory:r.factory,versions:[],
-      logo:null,price:null,mcap:null,liquidity:null,volume24h:null,txns24h:null,traders24h:null,holders:null,
-      buys24h:null,sells24h:null,token_created_at:r.at??null,last_trade_at:null,provider_updated_at:now,spark:[],
-      changes:{'5m':null,'1h':null,'6h':null,'24h':null}}});
+     metadata:{feed_schema:2,source:id,data_provider:'pad-factory',pad_factory:r.factory,
+      ...(r.at?{token_created_at:r.at}:{})}});
    }
    return rows;
   }
