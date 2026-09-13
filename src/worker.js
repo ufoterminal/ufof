@@ -4,7 +4,7 @@ import {frames,requestSnapshot,claimJob,finishJob,publishSnapshot,initSnapshots}
 import {drainHolderMaps,seedHolderMaps} from './holder-map.js';
 import {scanPadsInBackground} from './pad-registry.js';
 import {readPadMetadata,readDiscoveredMetadata} from './token-metadata.js';
-import {onchainSync} from './onchain.js';
+import {onchainSync,findPoolsFor,tokensMissingPools} from './onchain.js';
 import {namePadLaunches} from './direct.js';
 import {refreshRegistryInBackground} from './argus.js';
 let stopped=false;
@@ -45,7 +45,14 @@ export function startWorker(){
  // Following the chain: new pools and new swaps, continuously, apart from the market round.
  async function indexer(){
   let worked=false;
-  try{const p=await onchainSync();worked=!!(p.pools||p.trades);}catch(e){console.error('[indexer]',e.message);}
+  try{
+   const p=await onchainSync();
+   // Known launches without a pool are asked about directly, which is far cheaper than waiting for the
+   // backwards scan to reach the block they were created in.
+   const waiting=await tokensMissingPools();
+   const linked=waiting.length?await findPoolsFor(waiting):[];
+   worked=!!(p.pools||p.trades||linked.length);
+  }catch(e){console.error('[indexer]',e.message);}
   later(indexer,worked?1000:5000);
  }
  indexer();

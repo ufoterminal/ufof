@@ -345,6 +345,49 @@ export async function readBurned(token,decimals,supplyRaw){
 // as well as v2 and v3.
 // Names we already read from token contracts while indexing. A pad's launch list can use these straight
 // away instead of asking the chain again one token at a time.
+// Asking the factories for a token's pool instead of waiting to meet it in history.
+//
+// A launch we already know about does not need to be rediscovered by walking backwards through millions
+// of blocks: the factory can be asked directly whether a USDC pool exists for it. That is one call per fee
+// tier, and it puts a pad's older tokens on the site straight away rather than whenever the backfill
+// happens to reach them.
+const v3Factory=parseAbi(['function getPool(address,address,uint24) view returns (address)']);
+const v2Factory=parseAbi(['function getPair(address,address) view returns (address)']);
+const FEES=[100,500,3000,10000];
+const ZERO='0x0000000000000000000000000000000000000000';
+
+export async function findPoolsFor(tokens,{limit=12}={}){
+ await init();
+ const found=[];
+ for(const token of tokens.slice(0,limit)){
+  for(const factory of V3_FACTORIES){
+   for(const fee of FEES){
+    const pool=await rpc().readContract({address:factory,abi:v3Factory,functionName:'getPool',args:[token,USDC,fee]}).catch(()=>null);
+    if(!pool||String(pool).toLowerCase()===ZERO)continue;
+    found.push({pool:String(pool).toLowerCase(),token,version:'v3',fee,tick_spacing:null,hooks:null,
+     token_is_token0:token<USDC,created_block:null,created_at:null});
+   }
+  }
+  for(const factory of V2_FACTORIES){
+   const pair=await rpc().readContract({address:factory,abi:v2Factory,functionName:'getPair',args:[token,USDC]}).catch(()=>null);
+   if(!pair||String(pair).toLowerCase()===ZERO)continue;
+   found.push({pool:String(pair).toLowerCase(),token,version:'v2',fee:null,tick_spacing:null,hooks:null,
+    token_is_token0:token<USDC,created_block:null,created_at:null});
+  }
+ }
+ if(found.length)await savePools(found);
+ return found;
+}
+
+// Launches and tokens we hold that have no pool recorded yet, newest first.
+export async function tokensMissingPools(limit=12){
+ await init();
+ const rows=await q(`SELECT l.token,MAX(l.block) AS block FROM pad_launches l
+  LEFT JOIN onchain_pools p ON p.token=l.token
+  WHERE p.token IS NULL GROUP BY l.token ORDER BY MAX(l.block) DESC LIMIT $1`,[limit]);
+ return rows.map(r=>r.token);
+}
+
 export async function knownNames(addresses){
  await init();
  const list=[...new Set((addresses||[]).map(a=>String(a||'').toLowerCase()))].filter(a=>/^0x[0-9a-f]{40}$/.test(a));

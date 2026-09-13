@@ -75,7 +75,12 @@ ArgusPad token listesi yayınlamıyor; launch listesi Portal kontratlarında dur
 
 Arama sonuçlarında token logosu ve market değeri gösterilir. Birim fiyat yerine market değeri yazılır, çünkü aynı ticker'ı paylaşan onlarca kontrat arasında hangisinin gerçek piyasası olduğunu ayırt ettiren şey odur. Market değeri bilinmeyen tokende çizgi görünür. Sonuçlar da market değerine göre sıralanır, büyükten küçüğe; tam eşleşen adres veya sembol yine en üstte kalır, çünkü aradığın şeyin kendisi neye değerse değsin ilk sırada olmalı. Logosu olmayan veya resmi yüklenmeyen tokende iki harfli işaret kalır.
 
-## İndeksleme ve liste turu ayrı
+## Bilinen launch'ın havuzunu sormak
+
+Bir padin eski tokenlerini görmek için milyonlarca blok geriye yürümeye gerek yok: fabrikaya o token için USDC havuzu var mı diye doğrudan sorulur. Ücret kademesi başına bir çağrı, ve pad kaydındaki tokenler geriye tarama oraya varmadan sitede görünür. İndeksleyici her turda havuzu kayıtlı olmayan launch'lardan bir bölümünü böyle bağlar, en yeniden başlayarak.
+
+Kullanıcının modeli doğru: token zaten havuzundan keşfedilir, pad etiketi bunun üstüne eklenen bir işarettir. DYOR tokenlerinin havuzları da zaten taradığımız fabrikalarda (v3 `0xf0db7b58...3918`, v2 `0x942bd5bf...5c10`), yani kaybolmuş değillerdi, sıraları gelmemişti.
+
 
 Zinciri takip etmek ile piyasa listesini kurmak artık ayrı işler. İndeksleyici arka planda sürekli çalışır: yeni havuzlar fabrikalardan düşer, yeni swap'lar baştan okunur, launch adları ve metadata kendi ritminde tamamlanır. Piyasa turu ise yalnızca veritabanını okur.
 
