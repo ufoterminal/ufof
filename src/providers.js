@@ -44,8 +44,8 @@ export async function syncExternal(){
  // background: a market round that also scanned the chain took minutes, and everything on the page was as
  // old as the slowest scan in it.
  try{const rows=await onchainMarkets(now);out.push(...rows);
-  status.push({id:'onchain',ok:true,count:rows.length,mode:'self-indexed'});
- }catch(e){status.push({id:'onchain',ok:false,error:e.shortMessage||e.message});}
+  status.push({id:'uniswap',ok:true,count:rows.length,mode:'self-indexed'});
+ }catch(e){status.push({id:'uniswap',ok:false,error:e.shortMessage||e.message});}
  await persistRecords(out);
  return status;
 }

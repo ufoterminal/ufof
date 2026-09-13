@@ -79,8 +79,11 @@ function setupChart(){
  if(chart)return;
  const node=$('chart-container');
  chart=window.LightweightCharts.createChart(node,{width:node.clientWidth,height:node.clientHeight,layout:{background:{color:'#0a1421'},textColor:'#7089a5',fontFamily:'IBM Plex Mono, monospace',fontSize:10},grid:{vertLines:{color:'#142236'},horzLines:{color:'#142236'}},rightPriceScale:{borderColor:'#24364d',scaleMargins:{top:.07,bottom:.24},autoScale:true},timeScale:{borderColor:'#24364d',timeVisible:true,secondsVisible:false,rightOffset:3,barSpacing:7,minBarSpacing:2},crosshair:{mode:0,vertLine:{color:'#728aa4',width:1,style:3,labelBackgroundColor:'#26415e'},horzLine:{color:'#728aa4',width:1,style:3,labelBackgroundColor:'#26415e'}},handleScroll:true,handleScale:true});
- candleSeries=chart.addCandlestickSeries({upColor:'#39dbaa',downColor:'#ff697c',borderUpColor:'#39dbaa',borderDownColor:'#ff697c',borderVisible:true,wickUpColor:'#39dbaa',wickDownColor:'#ff697c',lastValueVisible:true,priceLineVisible:true,priceFormat:{type:'custom',formatter:price,minMove:.00000001}});
- lineSeries=chart.addLineSeries({color:'#7caaff',lineWidth:2,visible:false,priceFormat:{type:'custom',formatter:price,minMove:.00000001}});
+ // Deeper than the palette used elsewhere on purpose: the price label on the axis takes the series colour
+ // as its background and picks its text colour from that background's brightness. The lighter shades got
+ // dark text on a bright badge, which was hard to read at a glance.
+ candleSeries=chart.addCandlestickSeries({upColor:'#17a97f',downColor:'#e03b53',borderUpColor:'#17a97f',borderDownColor:'#e03b53',borderVisible:true,wickUpColor:'#17a97f',wickDownColor:'#e03b53',lastValueVisible:true,priceLineVisible:true,priceFormat:{type:'custom',formatter:price,minMove:.00000001}});
+ lineSeries=chart.addLineSeries({color:'#3f6fd8',lineWidth:2,visible:false,priceFormat:{type:'custom',formatter:price,minMove:.00000001}});
  volumeSeries=chart.addHistogramSeries({priceScaleId:'volume',priceFormat:{type:'volume'},base:0});volumeSeries.priceScale().applyOptions({scaleMargins:{top:.82,bottom:0}});
  new ResizeObserver(()=>chart.applyOptions({width:node.clientWidth,height:node.clientHeight})).observe(node);
  chart.subscribeCrosshairMove(p=>{const c=p.seriesData.get(candleSeries),l=p.seriesData.get(lineSeries),v=p.seriesData.get(volumeSeries);const volume=v&&valid(v.value)?'   Vol '+usd(v.value):'';const fmt=currentDetail?chartScale(currentDetail.market).format:price;if(c)$('chart-legend').textContent='O '+fmt(c.open)+'   H '+fmt(c.high)+'   L '+fmt(c.low)+'   C '+fmt(c.close)+volume;else if(l)$('chart-legend').textContent='Recorded close '+fmt(l.value)+volume;});
@@ -131,7 +134,7 @@ function paintDetail(d){
  const live=withLivePrice(d.candles,t.price,TIMEFRAME_SECONDS[tf]);
  if(live.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',base=t.price>0?t.price*k:0,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
   candleSeries.applyOptions({visible:!closing&&!lineOnly,priceFormat:{type:'custom',formatter:fmt,minMove}});
-  lineSeries.applyOptions({visible:closing||lineOnly,color:'#7caaff',priceFormat:{type:'custom',formatter:fmt,minMove}});
+  lineSeries.applyOptions({visible:closing||lineOnly,color:'#3f6fd8',priceFormat:{type:'custom',formatter:fmt,minMove}});
   lineSeries.setData(closing?(d.closes||[]).map(c=>({time:c.bucket,value:c.value*k})):(lineOnly?live.map(c=>({time:c.bucket,value:c.close*k})):[]));
   candleSeries.setData((closing?[]:live).map(c=>({time:c.bucket,open:c.open*k,high:c.high*k,low:c.low*k,close:c.close*k})));
   volumeSeries.setData((closing?d.closes:d.candles).filter(c=>valid(c.volume)&&c.volume>=0).map(c=>({time:c.bucket,value:c.volume,color:closing?'#36588280':c.close>=c.open?'#23856c65':'#af435665'})));

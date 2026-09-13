@@ -277,7 +277,9 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
   const versions=[...entry.versions];
   // A venue is only named for the two we can name with certainty. A v2 pair is recorded as v2 without
   // claiming which exchange's front end it belongs to.
-  const m={feed_schema:2,source:'onchain',data_provider:'self',versions,
+  // Discovered from Uniswap's own factories, so that is what it is called. There is no separate on-chain
+  // source any more: the same markets used to arrive twice, once from our reading and once from a feed.
+  const m={feed_schema:2,source:'uniswap',data_provider:'self',versions,
    venues:versions.filter(v=>v!=='v2').map(v=>'uniswap-'+v),provider_updated_at:now};
   // Only what we actually measured. A field we cannot compute is left unset so another source's value
   // is not overwritten with a blank.
@@ -313,7 +315,7 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
   }
   rows.push({address:token,name:info.name||'',symbol:info.symbol||'',decimals:Number(info.decimals),
    total_supply:info.total_supply==null?null:String(info.total_supply),
-   creation_at:entry.created,launchpad_id:'onchain',factory:null,metadata:m});
+   creation_at:entry.created,launchpad_id:'uniswap',factory:null,metadata:m});
  }
  return rows;
 }

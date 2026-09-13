@@ -75,7 +75,22 @@ ArgusPad token listesi yayınlamıyor; launch listesi Portal kontratlarında dur
 
 Arama sonuçlarında token logosu ve market değeri gösterilir. Birim fiyat yerine market değeri yazılır, çünkü aynı ticker'ı paylaşan onlarca kontrat arasında hangisinin gerçek piyasası olduğunu ayırt ettiren şey odur. Market değeri bilinmeyen tokende çizgi görünür. Sonuçlar da market değerine göre sıralanır, büyükten küçüğe; tam eşleşen adres veya sembol yine en üstte kalır, çünkü aradığın şeyin kendisi neye değerse değsin ilk sırada olmalı. Logosu olmayan veya resmi yüklenmeyen tokende iki harfli işaret kalır.
 
-## Bilinen launch'ın havuzunu sormak
+## Grafik renkleri
+
+Mum renkleri sitenin geri kalanından biraz daha koyudur ve bu bilinçli: eksendeki son fiyat etiketi arka planını seri renginden alır, yazı rengini de o arka planın parlaklığına göre seçer. Açık tonlarda etiket parlak zemin üstünde koyu yazı oluyordu ve bir bakışta okunmuyordu; koyu tonlarda beyaz yazı geliyor.
+
+## Mimari
+
+Üç iş birbirinden ayrıdır ve birbirini beklemez.
+
+**İndeksleyici** zinciri takip eder: fabrikalardan yeni havuzlar düşer, baştan yeni swap'lar okunur, bilinen launch'ların havuzu fabrikaya sorulur, adlar ve metadata tamamlanır. Her adımın kendi imleci vardır ve kesilirse kaldığı yerden devam eder.
+
+**Piyasa turu** yalnızca veritabanını okur ve listeyi kurar. Hiçbir şey taramaz, bu yüzden süresi taramaya bağlı değildir.
+
+**Detay** istendiğinde elde olanı hemen verir, bayatsa arkada yeniden kurar. Sayfa kendi kendini yeniler.
+
+Kaynaklar tek bir kimlikte birleşti: Uniswap havuzlarından keşfettiğimiz tokenler "Uniswap" altında görünür. Öncesinde aynı piyasalar hem kendi okumamızdan hem bir beslemeden iki ayrı kaynak olarak geliyordu; artık tek yoldan gelir ve o yol bizim.
+
 
 Bir padin eski tokenlerini görmek için milyonlarca blok geriye yürümeye gerek yok: fabrikaya o token için USDC havuzu var mı diye doğrudan sorulur. Ücret kademesi başına bir çağrı, ve pad kaydındaki tokenler geriye tarama oraya varmadan sitede görünür. İndeksleyici her turda havuzu kayıtlı olmayan launch'lardan bir bölümünü böyle bağlar, en yeniden başlayarak.
 
