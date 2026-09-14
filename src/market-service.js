@@ -52,6 +52,23 @@ export function mapMarket(t){
   venues:[...new Set([...(m.venues||[]),...(m.versions||[]).filter(v=>v==='v3'||v==='v4').map(v=>'uniswap-'+v)])],chartProvider:m.chart_provider||null,pool:m.pool||null,marketData:sources.has(m.source),stale:!(Number(m.provider_updated_at)>Date.now()/1000-180)};
 }
 export function invalidateMarkets(){until=0;}
+// A list row is stamped fresh on every market round even when its feed answered from cache, so its price
+// could predate the token's latest trades by a wide margin while the token page, reading those trades,
+// showed the real one. The newest trade in the token's stored detail therefore wins over the row when it is
+// newer than the last trade the row knows of, and the valuation moves with it at the row's own supply.
+const PREPARED_MAX_AGE_MS=15*60000;
+export function withPreparedPrice(market,prepared,preparedAt,metadata,now=Date.now()){
+ if(!market||!prepared||!(Number(preparedAt)>now-PREPARED_MAX_AGE_MS))return market;
+ if(crossQuote(metadata)||nonUsdQuote(market.quoteToken)||market.quotePending)return market;
+ const trade=(prepared.trades||[]).filter(t=>number(t.price)>0&&Number(t.at)>0&&Number(t.at)<=now/1000+60).reduce((a,t)=>!a||Number(t.at)>Number(a.at)?t:a,null);
+ if(!trade||!(Number(trade.at)>(market.lastTradeAt||0)))return market;
+ const price=Number(trade.price);
+ const supplyOf=(cap,p)=>number(cap)>0&&number(p)>0?cap/p:null;
+ const supply=supplyOf(market.marketCap,market.price)??supplyOf(prepared.market?.marketCap,prepared.market?.price);
+ const fdvSupply=supplyOf(market.fdv,market.price)??supplyOf(prepared.market?.fdv,prepared.market?.price);
+ return {...market,price,lastTradeAt:Number(trade.at),
+  marketCap:supply==null?market.marketCap:price*supply,fdv:fdvSupply==null?market.fdv:price*fdvSupply};
+}
 async function allMarkets(){
  await initSnapshots();
  if(snapshot&&until>Date.now())return snapshot;
@@ -59,7 +76,7 @@ async function allMarkets(){
  inflight=q(`SELECT t.*,l.launchpad_id,s.payload AS prepared,s.updated AS prepared_at FROM tokens t LEFT JOIN launches l ON l.token=t.address
  LEFT JOIN LATERAL (SELECT payload,updated FROM market_snapshots_v3 WHERE token=t.address ORDER BY updated DESC LIMIT 1) s ON true
  WHERE (t.metadata->>'feed_schema'='2' OR t.metadata->>'catalog_schema'='2')`).then(rows=>{
-  snapshot=rows.map(mapMarket);until=Date.now()+10000;return snapshot;
+  snapshot=rows.map(r=>withPreparedPrice(mapMarket(r),r.prepared,r.prepared_at,r.metadata));until=Date.now()+10000;return snapshot;
  }).finally(()=>{inflight=null;});return inflight;
 }
 const sum=(rows,key)=>{const vs=rows.map(r=>r[key]).filter(v=>v!=null);return vs.length?vs.reduce((a,b)=>a+b,0):null;};
@@ -95,7 +112,7 @@ export function selectMarkets(all,options={},now=Math.floor(Date.now()/1000)){
  // The browsable list stops at a few hundred rows. Everything else is still held, still searchable and
  // still indexed; it simply is not something anyone pages through. A search is never capped, because there
  // the reader has named what they are looking for.
- const cap=Math.max(50,Math.min(5000,Number(process.env.LIST_CAP||500)));
+ const cap=Math.max(50,Math.min(5000,Number(process.env.LIST_CAP||250)));
  const held=rows.length;
  if(!query&&rows.length>cap)rows=rows.slice(0,cap);
  const limit=Math.min(100,Math.max(10,Math.floor(Number(options.limit)||50))),pages=Math.max(1,Math.ceil(rows.length/limit));

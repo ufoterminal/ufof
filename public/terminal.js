@@ -168,7 +168,7 @@ function paintDetail(d){
  $('detail-metrics').innerHTML='<div class="identity">'+icon(t)+'<div class="identity-name"><b>'+esc(t.symbol||'?')+'</b>'+padBadge(t)+'<small>'+esc(t.name||short(t.address))+'</small></div>'+(links?'<div class="identity-links">'+links+'</div>':'')+'</div>'
   +'<h2 class="details-title">Market overview</h2>'
   // The burn gets a line of its own, so the amount and its share read together without squeezing a card.
-  +'<div class="burn-banner"><span>Tokens burned:</span><b>'+(burn.amount||burn.share||burn.unknown)+'</b>'+(burn.amount&&burn.share?'<i>('+burn.share+')</i>':'')+'</div>'
+  +'<div class="burn-banner"><span>Burned supply</span><b>'+(burn.amount||burn.share||burn.unknown)+'</b>'+(burn.amount&&burn.share?'<i>('+burn.share+')</i>':'')+'</div>'
   +'<div class="metrics three">'+[['Price',compactPrice(t.price),price(t.price)],['Liquidity',usd(t.liquidity)],['Mkt cap',usd(t.marketCap)]]
     .map(([l,v,full])=>'<div class="metric"><small>'+l+'</small><b'+(full?' title="'+esc(full)+'"':'')+'>'+v+'</b></div>').join('')+'</div>'
   +'<div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'
@@ -181,8 +181,6 @@ function paintDetail(d){
    +'<div><span>Last trade</span><span>'+since(t.lastTradeAt)+'</span></div>'
    +'<div><span>Pool</span><span>'+esc(short(t.pool))+'</span></div>'
    +'<div><span>Updated</span><span>'+since(t.updatedAt)+'</span></div></div>'
-  +'<div class="socials">'+[['Website',t.website],['X',t.twitter],['Telegram',t.telegram]].filter(([,url])=>safeUrl(url))
-    .map(([label,url])=>'<a href="'+esc(safeUrl(url))+'" target="_blank" rel="noopener noreferrer">'+label+' \u2197</a>').join('')+'</div>'
   +'<a class="all-link" href="https://arc-scan.org/address/'+esc(t.address)+'" target="_blank" rel="noopener">View on Arcscan \u2197</a>'
   +'<p class="support-note">Missing figures are not estimated.</p>';
  // Only a real failure earns a line here. How the candles were assembled, and whether a refresh is still

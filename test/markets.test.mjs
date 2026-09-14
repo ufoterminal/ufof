@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 process.env.DATA_DIR='memory://';
 delete process.env.DATABASE_URL;
-import {selectMarkets,mapMarket} from '../src/market-service.js';
+import {selectMarkets,mapMarket,withPreparedPrice} from '../src/market-service.js';
 const now=1800000000;
 const token=(id,extra={})=>({address:'0x'+id.toString(16).padStart(40,'0'),symbol:'TOKEN'+id,name:'Token '+id,source:'tolly',marketData:true,volume:100,price:.001,marketCap:1000,createdAt:now-86400,updatedAt:now,liquidity:200,versions:['v3'],changes:{'24h':2},...extra});
 test('a token that has gone quiet stays in the list and in search',()=>{
@@ -13,6 +13,20 @@ test('a token that has gone quiet stays in the list and in search',()=>{
  assert.equal(stats.active,1,'the header totals still count only what traded');
  assert.equal(stats.archived,2,'against everything held');
  assert.equal(selectMarkets(all,{},now).trending.every(r=>r.symbol!=='OLD'),true,'the most active tape stays active');
+});
+test('the list takes the newest trade from the stored detail when the row predates it',()=>{
+ const ms=now*1000,close=(a,b)=>Math.abs(a-b)<1e-6*Math.max(1,Math.abs(b));
+ const row={...token(1),price:.001,marketCap:1000,fdv:1200,lastTradeAt:now-600};
+ const prepared={market:{price:.001,marketCap:1000},trades:[{at:now-120,price:.002},{at:now-30,price:.003}]};
+ const fresh=withPreparedPrice(row,prepared,ms-60000,{},ms);
+ assert.equal(fresh.price,.003,'the latest trade wins, whatever order the trades were stored in');
+ assert.ok(close(fresh.marketCap,3000),'the market cap moves with the price at the row’s own supply');
+ assert.ok(close(fresh.fdv,3600));assert.equal(fresh.lastTradeAt,now-30);
+ assert.equal(withPreparedPrice({...row,lastTradeAt:now-10},prepared,ms-60000,{},ms).price,.001,'a row that already knows a newer trade keeps its price');
+ assert.equal(withPreparedPrice(row,prepared,ms-20*60000,{},ms).price,.001,'a snapshot older than the window is not trusted');
+ assert.equal(withPreparedPrice({...row,quotePending:true},prepared,ms-60000,{},ms).price,.001,'an unconverted quote is never priced from raw trades');
+ assert.equal(withPreparedPrice(row,{trades:[{at:now+3600,price:9}]},ms-60000,{},ms).price,.001,'a trade stamped in the future is ignored');
+ assert.equal(withPreparedPrice(row,null,null,{},ms),row,'a token with no stored detail is left as it is');
 });
 test('exact address and symbol rank before partial matches',()=>{
  const all=[token(1,{symbol:'ABCD',volume:1000}),token(2,{symbol:'ABC',volume:1})];
@@ -103,8 +117,8 @@ test('a token with no symbol is still a row, ranked like any other',()=>{
 test('the browsable list stops at a cap while search still reaches everything',()=>{
  const all=Array.from({length:1200},(_,i)=>token(i+1,{symbol:'T'+i,volume:1200-i}));
  const list=selectMarkets(all,{limit:50},now);
- assert.equal(list.total,500,'the list itself is capped');
- assert.equal(list.pages,10,'which is ten pages of fifty');
+ assert.equal(list.total,250,'the list itself is capped');
+ assert.equal(list.pages,5,'which is five pages of fifty');
  assert.equal(list.held,1200,'and it says how many are actually held');
  assert.equal(list.rows[0].volume,1200,'the cap keeps the busiest, not an arbitrary slice');
  const deep=all[900];

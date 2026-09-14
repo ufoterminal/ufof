@@ -55,7 +55,9 @@ CREATE TABLE IF NOT EXISTS onchain_trades(
  price NUMERIC,usd_volume NUMERIC,buy BOOLEAN,trader TEXT,tx TEXT,PRIMARY KEY(pool,block,log_index));
 CREATE INDEX IF NOT EXISTS onchain_trades_token_at ON onchain_trades(token,at);
 CREATE TABLE IF NOT EXISTS onchain_cursor(k TEXT PRIMARY KEY,head BIGINT,oldest BIGINT,updated BIGINT);
-ALTER TABLE onchain_cursor ADD COLUMN IF NOT EXISTS oldest_at BIGINT;`);
+ALTER TABLE onchain_cursor ADD COLUMN IF NOT EXISTS oldest_at BIGINT;
+ALTER TABLE onchain_pools ADD COLUMN IF NOT EXISTS quote_decimals INTEGER;
+ALTER TABLE onchain_pools ADD COLUMN IF NOT EXISTS quote_token TEXT;`);
 
 const tapeKeys=3;
 const readCursor=async k=>(await q('SELECT head,oldest,oldest_at FROM onchain_cursor WHERE k=$1',[k]))[0]||null;
@@ -91,11 +93,13 @@ function plan(cursor,head,{back=true,windows=BACKFILL}={}){
 export async function discoverPools({head,back=true}={}){
  await init();
  head=head??Number(await rpc().getBlockNumber());
- const found=[];
+ const found=[],unpriced=[];
  for(const [key,address,spec] of [
-  ...V3_FACTORIES.map(f=>['v3:'+f,f,{event:poolCreated}]),
+  // New cursor keys, so the backfill walks history again: v4 for the native USDC pools it used to skip,
+  // v3 for the pools quoted in a token that itself trades against USDC.
+  ...V3_FACTORIES.map(f=>['v3b:'+f,f,{event:poolCreated}]),
   ...V2_FACTORIES.map(f=>['v2:'+f,f,{events:pairCreated}]),
-  ['v4:'+V4_POOL_MANAGER,V4_POOL_MANAGER,{event:initialize}]
+  ['v4n:'+V4_POOL_MANAGER,V4_POOL_MANAGER,{event:initialize}]
  ]){
   const cursor=await readCursor(key);
   const ranges=plan(cursor,head,{back});
@@ -105,56 +109,104 @@ export async function discoverPools({head,back=true}={}){
    const logs=await rpc().getLogs({address,...spec,fromBlock:BigInt(range.from),toBlock:BigInt(range.to)});
    for(const log of logs){
     if(log.removed)continue;
-    const a=log.args,v4=a.id!=null,v2=a.pair!=null;
-    const c0=v4?a.currency0:a.token0,c1=v4?a.currency1:a.token1;
-    // Only USDC markets: without a quote side in USDC there is no price we could state in dollars.
-    if(!isUsdc(c0)&&!isUsdc(c1))continue;
-    const token=String(isUsdc(c0)?c1:c0).toLowerCase();
-    found.push({pool:String(v4?a.id:(v2?a.pair:a.pool)).toLowerCase(),token,version:v4?'v4':v2?'v2':'v3',
-     fee:v2?null:Number(a.fee),tick_spacing:v2?null:Number(a.tickSpacing),hooks:v4?String(a.hooks).toLowerCase():null,
-     token_is_token0:!isUsdc(c0),created_block:Number(log.blockNumber),created_at:logTime(log)});
+    const row=poolFromLog(log);
+    if(row)found.push(row);else unpriced.push(log);
    }
    oldest=Math.min(oldest,range.from);newest=Math.max(newest,range.to);
   }
   await writeCursor(key,newest,oldest);
  }
+ // A pool with no USDC side is still a market when its other side trades against USDC itself: that token's
+ // own dollar price carries the trade into dollars. Which tokens qualify is read from the pools we hold.
+ if(unpriced.length){
+  const sides=[...new Set(unpriced.flatMap(l=>[l.args.token0??l.args.currency0,l.args.token1??l.args.currency1].map(a=>String(a).toLowerCase())))];
+  const held=await q('SELECT DISTINCT token FROM onchain_pools WHERE quote_token IS NULL AND token=ANY($1::text[])',[sides]);
+  const bridges=new Set([...held.map(r=>r.token),...found.filter(r=>!r.quote_token).map(r=>r.token)]);
+  for(const log of unpriced){const row=poolFromLog(log,bridges);if(row)found.push(row);}
+ }
  if(found.length)await savePools(found);
  return found;
 }
 
+// A pool is kept when one side is USDC: the ERC-20, or on v4 Arc's native gas token, which is the same USDC
+// at 18 decimals written as the zero address. Failing that, it is kept when exactly one side is a bridge, a
+// token with a USDC market of its own, whose decimals are read when the pool's swaps are decoded. Without
+// either there is no dollar price we could state, so the pool is left out.
+export function poolFromLog(log,bridges=new Set()){
+ const a=log.args,v4=a.id!=null,v2=a.pair!=null;
+ const c0=String(v4?a.currency0:a.token0).toLowerCase(),c1=String(v4?a.currency1:a.token1).toLowerCase();
+ const usdDecimals=c=>isUsdc(c)?6:v4&&c===ZERO?18:null;
+ let quoteIs0,quoteToken=null,quoteDecimals=null;
+ if(usdDecimals(c0)!=null||usdDecimals(c1)!=null){
+  quoteIs0=usdDecimals(c0)!=null;
+  if(usdDecimals(quoteIs0?c1:c0)!=null)return null;
+  quoteDecimals=usdDecimals(quoteIs0?c0:c1);
+ }else{
+  if(bridges.has(c0)===bridges.has(c1))return null;
+  quoteIs0=bridges.has(c0);quoteToken=quoteIs0?c0:c1;
+ }
+ return {pool:String(v4?a.id:(v2?a.pair:a.pool)).toLowerCase(),token:quoteIs0?c1:c0,version:v4?'v4':v2?'v2':'v3',
+  fee:v2?null:Number(a.fee),tick_spacing:v2?null:Number(a.tickSpacing),hooks:v4?String(a.hooks).toLowerCase():null,
+  token_is_token0:!quoteIs0,quote_token:quoteToken,quote_decimals:quoteDecimals,created_block:Number(log.blockNumber),created_at:logTime(log)};
+}
+
 async function savePools(rows){
  for(let i=0;i<rows.length;i+=250){
-  await q(`INSERT INTO onchain_pools(pool,token,version,fee,tick_spacing,hooks,token_is_token0,created_block,created_at)
-   SELECT pool,token,version,fee,tick_spacing,hooks,token_is_token0,created_block,created_at
-   FROM jsonb_to_recordset($1::jsonb) AS x(pool text,token text,version text,fee int,tick_spacing int,hooks text,token_is_token0 boolean,created_block bigint,created_at bigint)
+  await q(`INSERT INTO onchain_pools(pool,token,version,fee,tick_spacing,hooks,token_is_token0,quote_token,quote_decimals,created_block,created_at)
+   SELECT pool,token,version,fee,tick_spacing,hooks,token_is_token0,quote_token,quote_decimals,created_block,created_at
+   FROM jsonb_to_recordset($1::jsonb) AS x(pool text,token text,version text,fee int,tick_spacing int,hooks text,token_is_token0 boolean,quote_token text,quote_decimals int,created_block bigint,created_at bigint)
    ON CONFLICT(pool) DO UPDATE SET created_at=COALESCE(onchain_pools.created_at,excluded.created_at),
+    quote_token=COALESCE(excluded.quote_token,onchain_pools.quote_token),
+    quote_decimals=COALESCE(excluded.quote_decimals,onchain_pools.quote_decimals),
     created_block=LEAST(COALESCE(onchain_pools.created_block,excluded.created_block),excluded.created_block)`,[JSON.stringify(rows.slice(i,i+250))]);
  }
 }
 
 // Decoded from the pool's own Swap log. The v4 sign convention is the swapper's, the opposite of v3, so
-// the side is read per version rather than assumed.
-export function decodeSwap(log,pool,decimals){
+// the side is read per version rather than assumed. A pool quoted in a bridge token is read in that token and
+// carried into dollars at `quoteUsd`, the bridge's own USDC price at the time; without one the trade is dropped.
+export function decodeSwap(log,pool,decimals,quoteUsd=null){
  const a=log.args,v4=a.id!=null,v2=a.amount0In!=null,token0=pool.token_is_token0;
  // A v2 pair reports four unsigned amounts instead of two signed ones, and carries no price of its own,
  // so the price is what the trade itself paid.
  const quoteRaw=v2?(token0?a.amount1In-a.amount1Out:a.amount0In-a.amount0Out):(token0?a.amount1:a.amount0);
  const tokenRaw=v2?(token0?a.amount0In-a.amount0Out:a.amount1In-a.amount1Out):(token0?a.amount0:a.amount1);
  if(quoteRaw==null||tokenRaw==null||quoteRaw===0n||tokenRaw===0n)return null;
- const quote=Math.abs(Number(quoteRaw))/1e6, amount=Math.abs(Number(tokenRaw))/10**decimals;
- const price=v2?quote/amount:sqrtPriceToUsd(a.sqrtPriceX96,{token0,decimals,quoteDecimals:6});
+ const bridged=!!pool.quote_token;
+ if(bridged&&(pool.quote_token_decimals==null||!(Number(quoteUsd)>0)))return null;
+ // Native USDC is counted in 18 decimals; reading it at six made one dollar look like a trillion.
+ const quoteDecimals=Number(bridged?pool.quote_token_decimals:(pool.quote_decimals??6));
+ const usd=bridged?Number(quoteUsd):1;
+ const quote=Math.abs(Number(quoteRaw))/10**quoteDecimals*usd, amount=Math.abs(Number(tokenRaw))/10**decimals;
+ const price=v2?quote/amount:sqrtPriceToUsd(a.sqrtPriceX96,{token0,decimals,quoteDecimals})*usd;
  if(!(quote>0&&amount>0&&price>0&&Number.isFinite(price)))return null;
  return {pool:pool.pool,token:pool.token,block:Number(log.blockNumber),log_index:Number(log.logIndex),
   at:logTime(log),price,usd_volume:quote,buy:v4?quoteRaw<0n:quoteRaw>0n,
   trader:v4?null:String(a.recipient||a.to||'').toLowerCase()||null,tx:log.transactionHash};
 }
 
+// A bridge's dollar price at `at`, from its own trades sorted by time. Those trades jump around: CRCL moved
+// between $29 and $42 inside an hour with most trades near $38, so one last trade could misprice everything
+// quoted in it. The median of its trades in the quarter hour before is used, an actual traded price rather
+// than an average; failing that the last trade inside an hour. Older than that says nothing reliable.
+export function priceAt(series,at,maxAge=3600,window=900){
+ let lo=0,hi=(series?.length||0)-1,end=-1;
+ while(lo<=hi){const mid=(lo+hi)>>1;if(series[mid].at<=at){end=mid;lo=mid+1;}else hi=mid-1;}
+ if(end<0||at-series[end].at>maxAge)return null;
+ const recent=[];
+ for(let i=end;i>=0&&at-series[i].at<=window;i--)if(series[i].price>0)recent.push(series[i].price);
+ if(!recent.length)return series[end].price>0?series[end].price:null;
+ recent.sort((a,b)=>a-b);
+ return recent[Math.floor((recent.length-1)/2)];
+}
+
 export async function collectTrades({head,back=true}={}){
  await init();
  head=head??Number(await rpc().getBlockNumber());
- const pools=new Map((await q('SELECT p.*,t.decimals FROM onchain_pools p LEFT JOIN onchain_tokens t ON t.address=p.token')).map(p=>[p.pool,p]));
+ const pools=new Map((await q(`SELECT p.*,t.decimals,qt.decimals AS quote_token_decimals FROM onchain_pools p
+  LEFT JOIN onchain_tokens t ON t.address=p.token LEFT JOIN onchain_tokens qt ON qt.address=p.quote_token`)).map(p=>[p.pool,p]));
  if(!pools.size)return [];
- const rows=[];
+ const rows=[],bridged=[];
  for(const [key,version] of [['tape:v3','v3'],['tape:v4','v4'],['tape:v2','v2']]){
   const cursor=await readCursor(key);
   const ranges=plan(cursor,head,{back});
@@ -171,6 +223,7 @@ export async function collectTrades({head,back=true}={}){
     const pool=pools.get(id);
     if(!pool||pool.version!==version)continue;
     if(pool.decimals==null)continue;   // metadata not read yet; the next pass picks it up
+    if(pool.quote_token){bridged.push({log,pool});continue;}
     const row=decodeSwap(log,pool,Number(pool.decimals));
     if(row&&row.at!=null)rows.push(row);
    }
@@ -178,6 +231,23 @@ export async function collectTrades({head,back=true}={}){
   }
   const oldestAt=Number((await rpc().getBlock({blockNumber:BigInt(oldest)})).timestamp);
   await writeCursor(key,newest,oldest,oldestAt);
+ }
+ // Bridge-quoted swaps wait until this pass's own USDC trades are decoded, so a bridge that traded in the
+ // same window prices them too. Its earlier trades come from the tape.
+ if(bridged.length){
+  const times=bridged.map(b=>logTime(b.log)).filter(t=>t!=null);
+  const tokens=[...new Set(bridged.map(b=>b.pool.quote_token))];
+  const stored=times.length?await q(`SELECT s.token,s.at,s.price FROM onchain_trades s JOIN onchain_pools p ON p.pool=s.pool
+   WHERE p.quote_token IS NULL AND s.token=ANY($1::text[]) AND s.at BETWEEN $2 AND $3`,
+   [tokens,times.reduce((m,t)=>Math.min(m,t),Infinity)-3600,times.reduce((m,t)=>Math.max(m,t),0)]):[];
+  const series=new Map(tokens.map(t=>[t,[]]));
+  for(const r of [...stored,...rows.filter(r=>series.has(r.token))])series.get(r.token).push({at:Number(r.at),price:Number(r.price)});
+  for(const s of series.values())s.sort((x,y)=>x.at-y.at);
+  for(const {log,pool} of bridged){
+   const at=logTime(log);if(at==null)continue;
+   const row=decodeSwap(log,pool,Number(pool.decimals),priceAt(series.get(pool.quote_token),at));
+   if(row)rows.push(row);
+  }
  }
  if(rows.length)await saveTrades(rows);
  return rows;
@@ -224,7 +294,7 @@ export async function readTokenMeta(limit=25){
 export async function readLiquidity(limit=20){
  await init();
  const rows=await q(`SELECT p.pool,p.token,t.decimals FROM onchain_pools p JOIN onchain_tokens t ON t.address=p.token
-  WHERE p.version IN ('v2','v3') AND t.decimals IS NOT NULL
+  WHERE p.version IN ('v2','v3') AND t.decimals IS NOT NULL AND p.quote_token IS NULL
   AND EXISTS(SELECT 1 FROM onchain_trades s WHERE s.pool=p.pool AND s.at>$1) LIMIT $2`,[Math.floor(Date.now()/1000)-86400,limit]);
  const out=new Map();
  for(const r of rows){
@@ -437,14 +507,14 @@ export async function knownNames(addresses){
 export async function bestPool(token){
  await init();
  const address=String(token||'').toLowerCase();
- const rows=await q(`SELECT p.pool,p.version,p.fee,p.tick_spacing,p.hooks,
+ const rows=await q(`SELECT p.pool,p.version,p.fee,p.tick_spacing,p.hooks,p.quote_decimals,
    (SELECT COUNT(*) FROM onchain_trades t WHERE t.pool=p.pool)::int AS trades
-  FROM onchain_pools p WHERE p.token=$1 ORDER BY trades DESC, p.created_block ASC LIMIT 1`,[address]);
+  FROM onchain_pools p WHERE p.token=$1 AND p.quote_token IS NULL ORDER BY trades DESC, p.created_block ASC LIMIT 1`,[address]);
  const pool=rows[0];
  if(!pool)return null;
  return {
   pool:pool.pool,
-  descriptor:pool.version==='v4'?{version:'v4',quoteToken:USDC,nativeQuote:false,
+  descriptor:pool.version==='v4'?{version:'v4',quoteToken:USDC,nativeQuote:Number(pool.quote_decimals)===18,
    feeTier:Number(pool.fee),tickSpacing:Number(pool.tick_spacing),hooks:pool.hooks}:null
  };
 }
