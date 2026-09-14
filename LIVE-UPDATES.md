@@ -1,5 +1,13 @@
 # Live updates
 
+## Stabilization pass (2026-09-15)
+
+- Older timestamped valuation packets cannot replace newer price/MC/pool packets in the detail UI.
+- Timeframe responses are cached per page. An uncached switch clears the previous frame while loading; live messages cannot repaint the old frame under a new label.
+- Local transaction queries are scoped to the selected pool. Chart RPC selection prefers the displayed pool instead of independently selecting a different one.
+- Completed paged histories continue fetching their newest trades rather than stopping when backfill completes.
+- This is not a complete canonical-pool architecture: provider trades without pool identifiers remain unverified, automatic liquidity-based primary-pool selection is not implemented, and existing bad historical trades are not deleted. Production RPC/API verification was blocked by network access in this pass. No production latency benchmark is claimed.
+
 Launchpad labels are restored in the market list, search results and token heading, with a Launched on filter. The label uses the stored launch record, not the price provider. Currently mapped: RadarDEX, DYOR, CircleWarp, Sharc, Tolly, Archemist, pools.trade, Noxa, ArgusPad, Long and o1. Other pads are not guessed. This UI change adds no RPC scanning.
 
 - All token detail pages use `/api/live/:address`, independent of candle backfills, burned-supply RPCs and timeframe changes.

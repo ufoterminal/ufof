@@ -194,7 +194,7 @@ export async function buildMarket(address,tf='1h'){
  // The trade list is taken from our own tape when it is ahead, because the indexer follows the chain head
  // continuously while a chart store is only refreshed when somebody is looking at that token. This is what
  // made transactions arrive a minute or more after they happened.
- const tape=nonUsdQuote(market.quoteToken)||crossQuote(row.metadata)?[]:await recentTrades(address,100).catch(()=>[]);
+ const tape=nonUsdQuote(market.quoteToken)||crossQuote(row.metadata)||!market.pool?[]:await recentTrades(address,100,market.pool).catch(()=>[]);
  const fromProvider=remote?.trades||[];
  const trades=(tape.length&&(!fromProvider.length||(tape[0]?.at||0)>=(fromProvider[0]?.at||0)))?tape:fromProvider;
  if(trades[0]?.at)market.lastTradeAt=validTime(trades[0].at)||market.lastTradeAt;

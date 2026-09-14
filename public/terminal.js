@@ -1,4 +1,5 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
+import {retainValuation} from './market-state.js';
 import {updateSeries,reconcileTrades,updateMarketRows,burnText,burnParts,syncNotice,retainBurnReading} from './live-ui.js';
 import {esc,valid,price,compactPrice,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
@@ -11,10 +12,11 @@ const chartScales=new Set(['price','mc']);
 let listData=null,listSeq=0,listController,searchSeq=0,searchController,searchTimer,detailSeq=0,detailController,tf=timeframes.has(params.get('tf'))?params.get('tf'):'1h',viewMode=chartViews.has(params.get('view'))?params.get('view'):'candles',scaleMode=chartScales.has(params.get('scale'))?params.get('scale'):'price',currentDetail=null;
 let liveData=null,liveTimer,liveController,liveBusy=false,liveFailures=0,liveAt=0;
 let eventStream=null,streamHealthy=false,listNoticeTimer;
+const frameCache=new Map();
 function acceptLive(d){
  if(!d?.market)return;
  liveData=d;liveAt=Date.now();liveFailures=0;
- if(currentDetail){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
+ if(currentDetail&&currentDetail.timeframe===tf){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
 }
 function connectEvents(){
  if(wallet||document.hidden||eventStream||!window.EventSource)return;
@@ -29,10 +31,11 @@ function connectEvents(){
 function disconnectEvents(){eventStream?.close();eventStream=null;streamHealthy=false;clearTimeout(listNoticeTimer);}
 function mergeLive(d){
  d={...d,market:retainBurnReading(d.market,currentDetail?.market)};
+ d.market=retainValuation(d.market,currentDetail?.market);
  if(!liveData||Date.now()-liveAt>20000)return d;
  const fields=Object.fromEntries(Object.entries(liveData.market||{}).filter(([,v])=>v!=null));
  const trades=liveData.trades?.length?liveData.trades:d.trades;
- return {...d,market:{...d.market,...fields},trades};
+ return {...d,market:retainValuation({...d.market,...fields},d.market),trades};
 }
 async function loadLive(force=false){
  if(liveBusy||document.hidden||!address||(streamHealthy&&!force))return;
@@ -361,8 +364,17 @@ let detailBusy=false,detailTimer,detailFailures=0;
 async function loadDetail({background=false}={}){
  if(background&&detailBusy)return;
  clearTimeout(detailTimer);detailBusy=true;
+ const requestedFrame=tf;
+ if(!background){
+  const cached=frameCache.get(tf);
+  if(cached){currentDetail=mergeLive(cached);paintDetail(currentDetail);}
+  else if(currentDetail&&currentDetail.timeframe!==tf){
+   updateSeries(candleSeries,[],true);updateSeries(lineSeries,[],true);updateSeries(volumeSeries,[],true);
+   $('chart-empty').style.display='grid';$('chart-empty').textContent='Loading '+tf+' candles…';
+  }
+ }
  const seq=++detailSeq;detailController?.abort();detailController=new AbortController();
- try{const d=await api('/api/market/'+encodeURIComponent(address)+'?tf='+tf,detailController);if(seq!==detailSeq)return;currentDetail=mergeLive(d);paintDetail(currentDetail);detailFailures=0;}
+ try{const d=await api('/api/market/'+encodeURIComponent(address)+'?tf='+requestedFrame,detailController);if(seq!==detailSeq||requestedFrame!==tf)return;frameCache.set(requestedFrame,d);currentDetail=mergeLive(d);paintDetail(currentDetail);detailFailures=0;}
  catch(e){if(e.name==='AbortError'||seq!==detailSeq)return;detailFailures++;$('chart-error').textContent=e.message;if(!currentDetail){$('chart-empty').textContent='Token data is unavailable.';$('detail-metrics').textContent=e.message;}}
  finally{if(seq===detailSeq){detailBusy=false;if(!document.hidden)detailTimer=setTimeout(()=>loadDetail({background:true}),Math.min(30000,(currentDetail?.cache?.pending?2000:6000)*2**Math.min(detailFailures,3)));}}
 }

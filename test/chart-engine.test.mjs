@@ -65,3 +65,14 @@ test('paged raw history is persisted, reused across frames, and survives fetch f
   assert.equal(b.candles.length,1);assert.equal(b.candles[0].volume,12);assert.equal(calls,1);
  }finally{globalThis.fetch=original;}
 });
+test('completed provider archive continues reading newly published trades',async()=>{
+ const originalFetch=globalThis.fetch,originalNow=Date.now;let count=1;
+ const address='0x'+'7'.repeat(40);
+ globalThis.fetch=async()=>({ok:true,json:async()=>({total:count,trades:Array.from({length:count},(_,i)=>({id:String(i),ts:1700000000+i*60,price:2+i,usdc:1,txHash:'tx'+i}))})});
+ try{
+  const first=await ownChart('circlewarp',address,'1m',{trades:[]});assert.equal(first.history.complete,true);
+  count=2;const later=originalNow()+40000;Date.now=()=>later;
+  const next=await ownChart('circlewarp',address,'5m',{trades:[]});
+  assert.equal(next.history.records,2);assert.equal(next.candles.at(-1).close,3);
+ }finally{globalThis.fetch=originalFetch;Date.now=originalNow;}
+});

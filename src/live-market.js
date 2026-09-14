@@ -35,7 +35,7 @@ export async function liveMarket(address){
   market.marketCap=number(d.mcap)??market.marketCap;market.fdv=number(d.fdv)??market.fdv;
  }
  const protectedQuote=crossQuote(row.metadata)||nonUsdQuote(d?.quoteToken||d?.pairToken||d?.pair_token);
- const local=protectedQuote?[]:await recentTrades(address,100).catch(()=>[]);
+ const local=protectedQuote||!market.pool?[]:await recentTrades(address,100,market.pool).catch(()=>[]);
  const provider=remote?.trades||[];
  const useLocal=local.length&&(!provider.length||local[0].at>=provider[0].at);
  const trades=useLocal?local:provider;

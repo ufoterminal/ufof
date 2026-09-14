@@ -70,10 +70,13 @@ async function sync(source,token,seed,poolAddress,descriptor){
     if(result){await save(source+':rpc-v3',token,result.trades);state.rpc=result.state;state.rpcError=null;}
    }catch(e){state.rpcError=e.shortMessage||e.message;state.rpcRetryAt=Date.now()+60000;}
   }
+  // Paged providers must continue refreshing their head after archive completion.
+  if(!hasPagedHistory(source)){
   state.updated=Date.now();
   await q(`INSERT INTO chart_sync(source,token,state) VALUES($1,$2,$3::jsonb)
    ON CONFLICT(source,token) DO UPDATE SET state=excluded.state`,[source,token,JSON.stringify(state)]);
   return state;
+  }
  }
  const base=source==='sharc'?'https://sharc.fun/api/tokens/':'https://warp-arc-production.up.railway.app/api/tokens/';
  const size=source==='sharc'?500:100;
@@ -117,8 +120,8 @@ export async function ownChart(source,token,tf,remote,market={}){
   // Our own discovery is asked first for the market to read: it covers every token we list, so a chart no
   // longer depends on a feed naming the pool.
   const own=await bestPool(token).catch(()=>null);
-  const poolAddress=own?.pool||d.bestPool||d.pool_address||d.token?.pool_address||d.pool||market.pool;
-  const descriptor=own?.descriptor||(Array.isArray(d.pools)?d.pools.find(p=>p.pool===poolAddress):null);
+  const poolAddress=market.pool||d.bestPool||d.pool_address||d.token?.pool_address||d.pool||own?.pool;
+  const descriptor=(own?.pool?.toLowerCase()===poolAddress?.toLowerCase()?own?.descriptor:null)||(Array.isArray(d.pools)?d.pools.find(p=>p.pool?.toLowerCase()===poolAddress?.toLowerCase()):null);
   if(!flights.has(key)&&flights.size<4)flights.set(key,sync(source,token,remote.trades||[],poolAddress,descriptor).finally(()=>flights.delete(key)));
   if(!flights.has(key))throw Error('History workers busy');
   let timer;
