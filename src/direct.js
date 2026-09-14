@@ -2,6 +2,7 @@
 import {knownRegistry,launchMeta} from './argus.js';
 import {PAD_REGISTRIES,padLaunches} from './pad-registry.js';
 import {knownNames} from './onchain.js';
+import {enrichQuoteRows} from './quote-values.js';
 // How many unnamed launches are read from their contracts in one pass.
 // How long a source's answer is reused. Shorter than the sync round, so a round never serves an answer
 // fetched two rounds ago.
@@ -42,7 +43,11 @@ export async function cachedJson(url,ttl=30000){
   if(pending.has(url))return pending.get(url);
   const work=(async()=>{const r=await fetch(url,{signal:AbortSignal.timeout(12000),headers:{accept:'application/json'}});
     if(!r.ok)throw Error('Provider HTTP '+r.status);
-    const value=await r.json();if(cache.size>=300)cache.delete(cache.keys().next().value);
+    let value=await r.json();
+    const endpoint=new URL(url);
+    if(endpoint.origin==='https://api.radardex.pro'&&endpoint.pathname==='/tokens')
+      value=await enrichQuoteRows(value,address=>cachedJson('https://api.radardex.pro/token/'+address,ttl));
+    if(cache.size>=300)cache.delete(cache.keys().next().value);
     cache.set(url,{value,until:Date.now()+ttl});return value;
   })().finally(()=>pending.delete(url));pending.set(url,work);return work;
 }
@@ -304,6 +309,7 @@ export function normalizeDirect(id,json,now=Math.floor(Date.now()/1000)){
       price:number(t.price??t.priceUsd),mcap:number(t.mcap??t.marketCap),liquidity:number(t.liquidityUsdc??t.liquidity),volume24h:number(t.volume24??t.volume24h),
       txns24h:number(t.txns24??t.transactions24h),traders24h:number(t.traders24),holders:number(t.holderCount??t.holders),buys24h:number(t.buys24),sells24h:number(t.sells24),
       token_created_at:unix(t.deployTs||t.firstSeen),last_trade_at:unix(t.lastSwap),provider_updated_at:now,spark:t.spark,
+      fdv:number(t.fdv),quote_token:t.quoteToken||null,quote_assets:t.quotes||[],quote_pending:!!t.quotePending,usd_detail:!!t.usdDetail,
       changes:{'5m':number(t.change5m),'1h':number(t.change1h),'6h':number(t.change6h),'24h':number(t.change24??t.change24h)},
       website:t.website||null,twitter:t.twitter||null,telegram:t.telegram||null,description:t.description||undefined}
   }));

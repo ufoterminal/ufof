@@ -2,6 +2,7 @@ import {cachedJson,feeds,normalizeDirect,ownList} from './direct.js';
 import {q} from './db.js';
 import {ADDR} from './config.js';
 import {onchainMarkets} from './onchain.js';
+import {crossQuote} from './quote-values.js';
 const lower=x=>String(x||'').toLowerCase();
 const addr=x=>ADDR.test(String(x||''))?lower(x):null;
 const pick=(o,...keys)=>{for(const k of keys)if(o?.[k]!==undefined&&o?.[k]!==null&&o?.[k]!=='')return o[k];return null};
@@ -10,6 +11,14 @@ const unix=x=>{if(x==null)return null;const n=typeof x==='string'&&!/^\d+$/.test
 const safeUrl=x=>{try{const u=new URL(String(x));return ['http:','https:'].includes(u.protocol)?u.href:null}catch{return null}};
 async function get(url){const r=await fetch(url,{signal:AbortSignal.timeout(15000),headers:{accept:'application/json'}});if(!r.ok)throw Error(`${r.status} ${url}`);return r.json()}
 export function normalizeRadar(launchJson,marketJson,now=Math.floor(Date.now()/1000)){
+ const by=new Map((marketJson?.tokens||marketJson?.data||marketJson?.items||[]).map(t=>[addr(t.address),t]));
+ return normalizeRadarRows(launchJson,marketJson,now).map(r=>{
+  const t=by.get(r.address)||{};
+  return {...r,total_supply:t.totalSupply||r.total_supply,metadata:{...r.metadata,
+   fdv:finite(t.fdv),quote_token:t.quoteToken||null,quote_assets:t.quotes||[],quote_pending:!!t.quotePending,usd_detail:!!t.usdDetail}};
+ });
+}
+function normalizeRadarRows(launchJson,marketJson,now){
  const launches=Array.isArray(launchJson?.launches)?launchJson.launches:Array.isArray(launchJson?.data)?launchJson.data:[];
  const markets=Array.isArray(marketJson?.tokens)?marketJson.tokens:Array.isArray(marketJson?.data)?marketJson.data:Array.isArray(marketJson?.items)?marketJson.items:[];
  const by=new Map(markets.map(x=>[addr(pick(x,'address','token','tokenAddress','contractAddress')),x]).filter(x=>x[0]));
@@ -43,7 +52,10 @@ export async function syncExternal(){
  // The round reads what the indexer has already written. Indexing itself happens continuously in the
  // background: a market round that also scanned the chain took minutes, and everything on the page was as
  // old as the slowest scan in it.
- try{const rows=await onchainMarkets(now);out.push(...rows);
+ try{const rows=await onchainMarkets(now);
+  const stored=await q("SELECT address,metadata FROM tokens WHERE metadata ? 'quote_assets'");
+  const protectedTokens=new Set([...stored,...out].filter(r=>crossQuote(r.metadata)).map(r=>r.address));
+  out.push(...rows.filter(r=>!protectedTokens.has(r.address)));
   status.push({id:'uniswap',ok:true,count:rows.length,mode:'self-indexed'});
  }catch(e){status.push({id:'uniswap',ok:false,error:e.shortMessage||e.message});}
  await persistRecords(out);
@@ -71,7 +83,7 @@ export async function persistRecords(records){
    ON CONFLICT(address) DO UPDATE SET
    name=CASE WHEN excluded.name<>'' THEN excluded.name ELSE tokens.name END,
    symbol=CASE WHEN excluded.symbol<>'' THEN excluded.symbol ELSE tokens.symbol END,
-   decimals=COALESCE(excluded.decimals,tokens.decimals),metadata=CASE
+   decimals=COALESCE(excluded.decimals,tokens.decimals),total_supply=COALESCE(excluded.total_supply,tokens.total_supply),metadata=CASE
     WHEN excluded.metadata->>'dex_fallback'='true' AND tokens.metadata->>'feed_schema'='2'
       AND tokens.metadata->>'dex_fallback' IS DISTINCT FROM 'true' AND excluded.metadata->>'dex_primary' IS DISTINCT FROM 'true'
     THEN tokens.metadata||jsonb_build_object(

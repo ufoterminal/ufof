@@ -3,6 +3,7 @@ import {cachedJson,number} from './direct.js';
 import {poolHistory} from './rpc-history.js';
 import {bestPool} from './onchain.js';
 import {SOURCES} from '../public/sources.js';
+import {nonUsdQuote} from './quote-values.js';
 
 const frames={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 const flights=new Map();
@@ -106,6 +107,10 @@ async function sync(source,token,seed,poolAddress,descriptor){
 }
 export async function ownChart(source,token,tf,remote,market={}){
  const seconds=frames[tf];if(!seconds)throw Error('Invalid chart timeframe');
+ // The local tape currently covers USDC pools only. Never splice a secondary
+ // USDC pool into the USD history of a different primary quote market.
+ if(nonUsdQuote(remote.detail?.quoteToken||market.quoteToken)||market.quotePending)
+  return {...remote,candles:remote.candles||[],history:{...remote.history,source:'provider-usd'},notice:'USD provider history; cross-quote local indexing unavailable'};
  const key=source+':'+token;let state={},failure;
  try{
   const d=remote.detail||{};

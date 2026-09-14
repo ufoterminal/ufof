@@ -336,10 +336,11 @@ const BURN_ADDRESSES=['0x000000000000000000000000000000000000dead','0x0000000000
 export async function readBurned(token,decimals,supplyRaw){
  const address=String(token||'').toLowerCase();
  if(!/^0x[0-9a-f]{40}$/.test(address))return null;
- const read=fn=>rpc().readContract({address,abi:erc20,functionName:fn,...(fn==='balanceOf'?{}:{})});
+ const blockNumber=await rpc().getBlockNumber();
+ const read=fn=>rpc().readContract({address,abi:erc20,functionName:fn,blockNumber});
  const [supply,...balances]=await Promise.all([
-  supplyRaw!=null?Promise.resolve(BigInt(supplyRaw)):read('totalSupply').catch(()=>null),
-  ...BURN_ADDRESSES.map(dead=>rpc().readContract({address,abi:erc20,functionName:'balanceOf',args:[dead]}).catch(()=>null))
+  read('totalSupply').catch(()=>null),
+  ...BURN_ADDRESSES.map(dead=>rpc().readContract({address,abi:erc20,functionName:'balanceOf',args:[dead],blockNumber}).catch(()=>null))
  ]);
  if(balances.every(b=>b==null))return null;
  const burnedRaw=balances.reduce((a,b)=>a+(b??0n),0n);
@@ -347,6 +348,7 @@ export async function readBurned(token,decimals,supplyRaw){
  const burned=Number(burnedRaw)/scale;
  const total=supply==null?null:Number(supply)/scale;
  return {burned,total,percent:total>0?burned/total*100:null,
+  deadPercent:supply>0n&&balances[0]!=null?Number(balances[0]*10000000000n/supply)/100000000:null,
   circulating:total==null?null:Math.max(0,total-burned)};
 }
 

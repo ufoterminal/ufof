@@ -6,6 +6,7 @@ import {persistRecords} from './providers.js';
 import {requestSnapshot,readSnapshot,publishSnapshot,initSnapshots} from './snapshots.js';
 import {readBurned,recentTrades} from './onchain.js';
 import {launchMeta} from './argus.js';
+import {crossQuote,nonUsdQuote} from './quote-values.js';
 let snapshot=null,until=0,inflight=null;
 const sources=new Set(Object.keys(SOURCES));
 const validTime=v=>{const n=number(v);return n>0&&n<=Date.now()/1000+60?n:null;};
@@ -13,7 +14,7 @@ const finiteArray=a=>Array.isArray(a)?a.map(number).filter(n=>n!=null&&n>=0):[];
 export function mapMarket(t){
  const raw=t.metadata||{},verified=raw.feed_schema===2,m=verified?raw:{token_created_at:raw.token_created_at,logo:raw.logo,website:raw.website,twitter:raw.twitter,telegram:raw.telegram};
  const source=(verified?m.source:null)||t.launchpad_id||raw.archive_source||null;
- return {address:t.address,name:t.name,symbol:t.symbol,source,
+ return {address:t.address,name:t.name,symbol:t.symbol,source,quoteToken:m.quote_token||null,quotePending:!!m.quote_pending,
   price:number(m.price),marketCap:number(m.mcap),liquidity:number(m.liquidity),volume:number(m.volume24h),
   transactions:number(m.txns24h),traders:number(m.traders24h),holders:number(m.holders),
   buys:number(m.buys24h),sells:number(m.sells24h),changes:m.changes||{},spark:finiteArray(m.spark),
@@ -33,7 +34,7 @@ async function allMarkets(){
  inflight=q(`SELECT t.*,l.launchpad_id,s.payload AS prepared,s.updated AS prepared_at FROM tokens t LEFT JOIN launches l ON l.token=t.address
  LEFT JOIN LATERAL (SELECT payload,updated FROM market_snapshots_v3 WHERE token=t.address ORDER BY updated DESC LIMIT 1) s ON true
  WHERE (t.metadata->>'feed_schema'='2' OR t.metadata->>'catalog_schema'='2')`).then(rows=>{
-  snapshot=rows.map(r=>{const m=mapMarket(r);if(r.prepared?.market?.price!=null){m.price=r.prepared.market.price;m.priceSource='stored-chart';m.stale=Date.now()-Number(r.prepared_at)>60000;}return m;});until=Date.now()+10000;return snapshot;
+  snapshot=rows.map(mapMarket);until=Date.now()+10000;return snapshot;
  }).finally(()=>{inflight=null;});return inflight;
 }
 const sum=(rows,key)=>{const vs=rows.map(r=>r[key]).filter(v=>v!=null);return vs.length?vs.reduce((a,b)=>a+b,0):null;};
@@ -115,6 +116,8 @@ export async function buildMarket(address,tf='1h'){
   market.createdAt=validTime(dt.deployTs||dt.created_ts||dt.created_at)||market.createdAt;
   market.price=number(d.price??d.priceUsd??d.live?.currentPrice??d.live?.price??d.token_snapshots?.price)??market.price;
   market.marketCap=number(d.mcap??d.marketCapUsd??d.live?.market_cap??d.live?.marketCap??d.token_snapshots?.market_cap)??market.marketCap;
+  market.fdv=number(d.fdv)??market.fdv;
+  market.quoteToken=d.quoteToken||market.quoteToken;
   market.liquidity=number(dt.liquidityUsdc??dt.liquidity??d.liquidityUsd??d.live?.liquidity)??market.liquidity;
   market.buys=number(d.buys24??d.buys24h)??market.buys;market.sells=number(d.sells24??d.sells24h)??market.sells;
   market.pool=d.bestPool||dt.pool||market.pool;
@@ -133,6 +136,7 @@ export async function buildMarket(address,tf='1h'){
  // source the rest of the row came from. A failed read leaves it unknown instead of implying zero.
  try{
   const burn=await readBurned(market.address,row.decimals,row.total_supply);
+  market.deadBurnedPercent=burn?.deadPercent??null;
   // Dust left at a burn address is not a burn. Below a whole token it reads as "0 · 0.00%", which says
   // less than showing nothing at all.
   if(burn&&burn.burned>=1){market.burned=burn.burned;market.burnedPercent=burn.percent;market.circulating=burn.circulating;}
@@ -141,7 +145,7 @@ export async function buildMarket(address,tf='1h'){
  // The trade list is taken from our own tape when it is ahead, because the indexer follows the chain head
  // continuously while a chart store is only refreshed when somebody is looking at that token. This is what
  // made transactions arrive a minute or more after they happened.
- const tape=await recentTrades(address,100).catch(()=>[]);
+ const tape=nonUsdQuote(market.quoteToken)||crossQuote(row.metadata)?[]:await recentTrades(address,100).catch(()=>[]);
  const fromProvider=remote?.trades||[];
  const trades=(tape.length&&(!fromProvider.length||(tape[0]?.at||0)>=(fromProvider[0]?.at||0)))?tape:fromProvider;
  if(trades[0]?.at)market.lastTradeAt=validTime(trades[0].at)||market.lastTradeAt;
@@ -154,12 +158,15 @@ export async function buildMarket(address,tf='1h'){
 
 // What a snapshot holds of its own timeframe stays; what the market is worth right now comes from the
 // row, so every timeframe agrees and none of them shows a figure older than the last sync.
-const LIVE_FIGURES=['price','marketCap','liquidity','volume','transactions','traders','holders','buys','sells','changes','lastTradeAt','spark'];
+const LIVE_FIGURES=['price','marketCap','fdv','liquidity','volume','transactions','traders','holders','buys','sells','changes','lastTradeAt','spark'];
 export function withLiveFigures(market,row){
  if(!market||!row)return market;
  const live=mapMarket(row);
  const merged={...market};
  for(const key of LIVE_FIGURES)if(live[key]!=null)merged[key]=live[key];
+ if(row.metadata?.feed_schema===2)for(const key of ['price','marketCap','fdv'])merged[key]=live[key];
+ // A failed quote conversion must not resurrect a stale, quote-denominated valuation.
+ if(live.quotePending)for(const key of ['price','marketCap','fdv'])merged[key]=null;
  return merged;
 }
 

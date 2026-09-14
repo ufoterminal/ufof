@@ -130,9 +130,9 @@ function paintDetail(d){
   +(valid(ratio)?'<div class="ratio"><span style="width:'+ratio+'%"></span></div>':'')+'</div>';
  const share=(x,y)=>valid(x)&&valid(y)&&(x+y)>0?x/(x+y)*100:null;
  $('detail-metrics').innerHTML='<h2 class="details-title">Market overview</h2>'
-  +'<div class="metrics two">'+[['Price USD',price(t.price)],['Price',valid(t.price)?price(t.price)+' USDC':'\u2014']]
+  +'<div class="metrics two">'+[['Price USD',price(t.price)],['FDV',usd(t.fdv??t.marketCap)]]
     .map(([l,v])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b></div>').join('')+'</div>'
-  +'<div class="metrics three">'+[['Liquidity',usd(t.liquidity)],['FDV',usd(t.fdv??t.marketCap)],['Mkt cap',usd(t.marketCap)]]
+  +'<div class="metrics three">'+[['Liquidity',usd(t.liquidity)],['Burned',valid(t.deadBurnedPercent)?Number(t.deadBurnedPercent).toLocaleString('en-US',{maximumFractionDigits:6})+'%':'\u2014'],['Mkt cap',usd(t.marketCap)]]
     .map(([l,v])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b></div>').join('')+'</div>'
   +'<div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'
   +pair('Txns',{total:count(t.transactions),buy:count(t.buys),sell:count(t.sells)},null,'Buys','Sells',share(t.buys,t.sells))
