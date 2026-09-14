@@ -1,5 +1,15 @@
 // Keep history and DOM nodes intact while live data changes at the head.
 const history=new WeakMap();
+// Supply readings survive empty snapshots, independently of live price freshness.
+export function retainBurnReading(market,previous){
+ if(!market?.address||market.address.toLowerCase()!==previous?.address?.toLowerCase())return market;
+ const result={...market};
+ for(const key of ['burned','burnedPercent','deadBurnedPercent']){
+  if(result[key]==null&&Number.isFinite(previous[key]))result[key]=previous[key];
+ }
+ if(['burned','burnedPercent','deadBurnedPercent'].some(key=>Number.isFinite(result[key])))result.burnLoading=false;
+ return result;
+}
 export function updateMarketRows(body,html){
  const template=body.ownerDocument.createElement('tbody');template.innerHTML=html;
  const old=new Map([...body.children].filter(n=>n.dataset.token).map(n=>[n.dataset.token,n]));

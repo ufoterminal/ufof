@@ -1,5 +1,5 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
-import {updateSeries,reconcileTrades,updateMarketRows,burnText,burnParts,syncNotice} from './live-ui.js';
+import {updateSeries,reconcileTrades,updateMarketRows,burnText,burnParts,syncNotice,retainBurnReading} from './live-ui.js';
 import {esc,valid,price,compactPrice,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
@@ -28,6 +28,7 @@ function connectEvents(){
 }
 function disconnectEvents(){eventStream?.close();eventStream=null;streamHealthy=false;clearTimeout(listNoticeTimer);}
 function mergeLive(d){
+ d={...d,market:retainBurnReading(d.market,currentDetail?.market)};
  if(!liveData||Date.now()-liveAt>20000)return d;
  const fields=Object.fromEntries(Object.entries(liveData.market||{}).filter(([,v])=>v!=null));
  const trades=liveData.trades?.length?liveData.trades:d.trades;
