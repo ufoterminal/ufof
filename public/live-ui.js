@@ -1,5 +1,10 @@
 // Keep history and DOM nodes intact while live data changes at the head.
 const history=new WeakMap();
+export function burnPercent(value){
+ if(value==null||!Number.isFinite(Number(value))||Number(value)<0||Number(value)>100)return '—';
+ const n=Number(value);
+ return n>0&&n<0.01?'%<0,01':'%'+n.toLocaleString('tr-TR',{maximumFractionDigits:2});
+}
 export function updateSeries(series,rows,reset=false){
  const old=history.get(series);
  let appendOnly=!reset&&old&&rows.length>=old.length&&old.length>0;

@@ -11,3 +11,5 @@ circlewarp:{label:'CircleWarp',history:'circlewarp'},
  onchain:{label:'Uniswap',kind:'dex',retired:true}
 };
 export const VENUES={'uniswap-v3':'Uniswap V3','uniswap-v4':'Uniswap V4','dyorswap-v2':'DYORSwap V2'};
+export const LAUNCHPADS=Object.fromEntries(Object.entries(SOURCES).filter(([,v])=>v.kind!=='dex'&&!v.retired));
+export function launchpadId(value){return Object.hasOwn(LAUNCHPADS,value)?value:null;}

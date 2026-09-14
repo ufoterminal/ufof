@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'@playwright/test');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const app=express(),address='0x'+'1'.repeat(40),now=Math.floor(Date.now()/1000),bucket=Math.floor(now/3600)*3600;
-const market={address,symbol:'TEST',name:'Test fixture',source:'dyor',price:.01,marketCap:10000,fdv:10000,changes:{},versions:[],volume:30};
+const market={address,symbol:'TEST',name:'Test fixture',source:'uniswap',launchpad:'dyor',price:.01,marketCap:10000,fdv:10000,changes:{},versions:[],volume:30};
 const one={id:'one',at:now-10,price:.01,usd_volume:10,buy:true,tx:'0x'+'2'.repeat(64)};
 const two={id:'two',at:now,price:.012,usd_volume:20,buy:false,tx:'0x'+'3'.repeat(64)};
 let calls=0;
@@ -25,6 +25,7 @@ try{
  await page.evaluate(()=>window.keptTrade=document.querySelector('#trades tr[data-trade-key="one"]'));
  await page.waitForSelector('#trades tr[data-trade-key="two"]');
  assert.equal(await page.locator('#trades tr').count(),2);
+ assert.equal(await page.locator('#token-heading .launchpad-tag').textContent(),'DYOR');
  assert.equal(await page.evaluate(()=>window.keptTrade===document.querySelector('#trades tr[data-trade-key="one"]')),true);
  await page.locator('[data-tf="5m"]').click();
  await page.waitForFunction(()=>document.querySelector('[data-tf="5m"]').classList.contains('active'));

@@ -1,7 +1,7 @@
 import {q} from './db.js';
 import {number,directDetail} from './direct.js';
 import {ownChart} from './chart-engine.js';
-import {SOURCES} from '../public/sources.js';
+import {SOURCES,launchpadId} from '../public/sources.js';
 import {persistRecords} from './providers.js';
 import {requestSnapshot,readSnapshot,publishSnapshot,initSnapshots} from './snapshots.js';
 import {readBurned,recentTrades} from './onchain.js';
@@ -12,15 +12,22 @@ let snapshot=null,until=0,inflight=null;
 const burnValues=new Map(),burnFlights=new Set();
 const warmed=new Map();
 function cachedBurn(row){
- const key=row.address,hit=burnValues.get(key);
+ const key=row.address,stored=row.metadata?.burn_reading;
+ const hit=burnValues.get(key)||(stored?.value?{value:stored.value,until:Number(stored.at)+60000}:null);
  if((!hit||hit.until<Date.now())&&!burnFlights.has(key)&&burnFlights.size<4){
   burnFlights.add(key);
-  readBurned(key,row.decimals,row.total_supply).then(value=>{
+  readBurned(key,row.decimals,row.total_supply).then(async value=>{
    if(burnValues.size>=1000)burnValues.delete(burnValues.keys().next().value);
-   burnValues.set(key,{value:value||hit?.value||null,until:Date.now()+60000});
+   burnValues.set(key,{value:Number.isFinite(value?.deadPercent)?value:hit?.value||null,until:Date.now()+60000});
+   if(value?.deadPercent!=null)await q('UPDATE tokens SET metadata=metadata||$2::jsonb WHERE address=$1',
+    [key,JSON.stringify({burn_reading:{value,at:Date.now()}})]).catch(()=>null);
   }).catch(()=>burnValues.set(key,{value:hit?.value||null,until:Date.now()+30000})).finally(()=>burnFlights.delete(key));
  }
  return hit?.value||null;
+}
+export function burnFields(row){
+ const burn=cachedBurn(row);
+ return {deadBurnedPercent:burn?.deadPercent??null,burnLoading:burn?.deadPercent==null&&burnFlights.has(row.address)};
 }
 const sources=new Set(Object.keys(SOURCES));
 const validTime=v=>{const n=number(v);return n>0&&n<=Date.now()/1000+60?n:null;};
@@ -28,7 +35,7 @@ const finiteArray=a=>Array.isArray(a)?a.map(number).filter(n=>n!=null&&n>=0):[];
 export function mapMarket(t){
  const raw=t.metadata||{},verified=raw.feed_schema===2,m=verified?raw:{token_created_at:raw.token_created_at,logo:raw.logo,website:raw.website,twitter:raw.twitter,telegram:raw.telegram};
  const source=(verified?m.source:null)||t.launchpad_id||raw.archive_source||null;
- return {address:t.address,name:t.name,symbol:t.symbol,source,quoteToken:m.quote_token||null,quotePending:!!m.quote_pending,
+ return {address:t.address,name:t.name,symbol:t.symbol,source,launchpad:launchpadId(t.launchpad_id),quoteToken:m.quote_token||null,quotePending:!!m.quote_pending,
   price:number(m.price),marketCap:number(m.mcap),liquidity:number(m.liquidity),volume:number(m.volume24h),
   transactions:number(m.txns24h),traders:number(m.traders24h),holders:number(m.holders),
   buys:number(m.buys24h),sells:number(m.sells24h),changes:m.changes||{},spark:finiteArray(m.spark),
@@ -62,6 +69,7 @@ export function selectMarkets(all,options={},now=Math.floor(Date.now()/1000)){
  let rows=all.slice();
  if(query)rows=rows.filter(r=>[r.address,r.symbol,r.name].some(v=>String(v).toLowerCase().includes(query)));
  if(options.source)rows=rows.filter(r=>r.source===options.source);
+ if(options.launchpad)rows=rows.filter(r=>r.launchpad===options.launchpad);
  if(options.version)rows=rows.filter(r=>r.versions.includes(options.version));
  if(options.venue)rows=rows.filter(r=>(r.venues||[]).includes(options.venue));
  if(options.mode==='new')rows=rows.filter(r=>r.createdAt>now-7*86400);
@@ -181,6 +189,7 @@ export function withLiveFigures(market,row){
  if(!market||!row)return market;
  const live=mapMarket(row);
  const merged={...market};
+ merged.launchpad=live.launchpad;
  for(const key of LIVE_FIGURES)if(live[key]!=null)merged[key]=live[key];
  if(row.metadata?.feed_schema===2)for(const key of ['price','marketCap','fdv'])merged[key]=live[key];
  // Do not overwrite a coherent fresh USD detail packet with an older list round.

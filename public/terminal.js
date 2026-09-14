@@ -1,5 +1,5 @@
-import {SOURCES,VENUES} from './sources.js';
-import {updateSeries,reconcileTrades} from './live-ui.js';
+import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
+import {updateSeries,reconcileTrades,burnPercent} from './live-ui.js';
 import {esc,valid,price,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
@@ -33,6 +33,17 @@ function toast(text){$('toast').textContent=text;$('toast').hidden=false;setTime
 function saveWatch(a){watch=watch.includes(a)?watch.filter(v=>v!==a):[...watch,a].slice(-100);try{localStorage.setItem('arc-radar-watch-v1',JSON.stringify(watch));}catch{}if(listData)paintList();toast(watch.includes(a)?'Added to watchlist':'Removed from watchlist');}
 document.addEventListener('error',e=>{if(e.target.tagName==='IMG')e.target.remove();},true);
 function star(a){return '<button class="star '+(watch.includes(a)?'saved':'')+'" data-star="'+esc(a)+'" aria-label="'+(watch.includes(a)?'Remove from':'Add to')+' watchlist">☆</button>';}
+function padBadge(t){
+ const id=launchpadId(t.launchpad);if(!id)return '';
+ return '<span class="launchpad-tag" title="Launched on '+esc(LAUNCHPADS[id].label)+'">'+esc(LAUNCHPADS[id].label)+'</span>';
+}
+function paintPadBadges(container,rows){
+ const by=new Map(rows.map(t=>[t.address,t]));
+ for(const a of container.querySelectorAll('a[href^="/token/"]')){
+  const t=by.get(a.getAttribute('href').slice(7));
+  const label=a.querySelector('strong,b');if(t&&label&&!label.querySelector('.launchpad-tag'))label.insertAdjacentHTML('beforeend',padBadge(t));
+ }
+}
 function listShell(){
  app.innerHTML='<section class="hero"><div><div class="eyebrow">ARC NETWORK / MARKET EXPLORER</div><h1>Your view of Arc.</h1><p>Discover tokens. Follow the market. All in one place.</p></div><div class="stats"><div><small>ACTIVE MARKETS</small><strong id="stat-active">—</strong></div><div><small>24H VOLUME</small><strong id="stat-volume">—</strong></div><div><small>LIQUIDITY</small><strong id="stat-liquidity">—</strong></div><div><small>24H TXNS</small><strong id="stat-transactions">—</strong></div></div></section>'+
  '<div class="tape"><div class="tape-label">↗ MOST ACTIVE</div><div id="tape-items" class="tape-items"><span class="muted">Connecting to markets…</span></div></div><div id="list-banner" class="banner"></div>'+
@@ -42,6 +53,8 @@ function listShell(){
  '<footer class="footer"><span id="result-count">Loading markets…</span><div class="pagination"><button id="page-prev" aria-label="Previous page">‹</button><span id="page-label">1 / 1</span><button id="page-next" aria-label="Next page">›</button></div></footer></section>'+
  '<aside class="sidepanel"><section class="side-section"><h2 class="side-title">Market pulse <span>24H</span></h2><div id="pulse"></div></section></aside></div>';
  app.addEventListener('click',listClick);
+ document.querySelector('.filters').insertAdjacentHTML('afterbegin','<label>LAUNCHED ON<select id="launchpad-filter" aria-label="Launchpad"><option value="">All launchpads</option>'+Object.entries(LAUNCHPADS).map(([id,p])=>'<option value="'+id+'">'+esc(p.label)+'</option>').join('')+'</select></label>');
+ $('launchpad-filter').addEventListener('change',()=>{state.launchpad=$('launchpad-filter').value;state.page=1;loadList();});
  for(const [id,key] of [['version-filter','version'],['venue-filter','venue'],['min-liquidity','minLiquidity'],['min-volume','minVolume']])$(id).addEventListener('change',()=>{state[key]=$(id).value;state.page=1;loadList();});
 }
 function listClick(e){
@@ -50,7 +63,7 @@ function listClick(e){
  const sort=e.target.closest('[data-sort]');if(sort){state.dir=state.sort===sort.dataset.sort&&state.dir==='desc'?'asc':'desc';state.sort=sort.dataset.sort;state.page=1;loadList();return;}
  if(e.target.closest('#refresh')){loadList();return;}
  if(e.target.closest('#page-prev')){state.page--;loadList();return;}if(e.target.closest('#page-next')){state.page++;loadList();return;}
- if(e.target.closest('#clear-filters')){for(const id of ['version-filter','venue-filter','min-liquidity','min-volume'])$(id).value='';Object.assign(state,{source:'',version:'',minLiquidity:'',minVolume:'',page:1});loadList();return;}
+ if(e.target.closest('#clear-filters')){for(const id of ['version-filter','venue-filter','launchpad-filter','min-liquidity','min-volume'])$(id).value='';Object.assign(state,{source:'',launchpad:'',version:'',venue:'',minLiquidity:'',minVolume:'',page:1});loadList();return;}
  const row=e.target.closest('[data-token]');if(row&&!e.target.closest('a'))location.href='/token/'+row.dataset.token;
 }
 async function loadList(){
@@ -65,6 +78,7 @@ function paintList(){
  document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===state.mode));
  $('market-rows').innerHTML=d.rows.map(t=>'<tr data-token="'+esc(t.address)+'"><td>'+star(t.address)+'</td><td><a class="token-cell" href="/token/'+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><span class="description">'+esc(t.name||short(t.address))+'</span></span></a></td><td>'+spark(t.spark,t.changes['24h'])+'</td><td>'+usd(t.marketCap)+'</td><td>'+price(t.price)+'</td><td title="'+esc(date(t.createdAt))+'">'+age(t.createdAt)+'</td><td>'+usd(t.volume)+'</td><td>'+count(t.transactions)+'</td><td>'+count(t.traders)+'</td><td>'+count(t.holders)+'</td>'+['5m','1h','6h','24h'].map(w=>'<td class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</td>').join('')+'<td>'+usd(t.liquidity)+'</td></tr>').join('')||'<tr><td colspan="15" class="empty">'+(state.mode==='watch'?'Your watchlist is empty. Tap ☆ beside any token.':'No markets match these filters.')+'</td></tr>';
  $('result-count').textContent=count(d.total)+' tokens'+(valid(d.held)&&d.held>d.total?' of '+count(d.held)+' indexed \u00b7 search reaches the rest':'')+' \u00b7 source coverage totals';
+ paintPadBadges($('market-rows'),d.rows);
  $('page-label').textContent=d.page+' / '+d.pages;$('page-prev').disabled=d.page<=1;$('page-next').disabled=d.page>=d.pages;
  $('synced').textContent=d.updatedAt?'Updated '+age(d.updatedAt)+' ago':'Syncing…';
  $('tape-items').innerHTML=d.trending.map((t,i)=>'<a class="tape-item" href="/token/'+esc(t.address)+'"><span class="muted">#'+(i+1)+'</span><b>'+esc(t.symbol)+'</b><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span></a>').join('');
@@ -83,6 +97,7 @@ async function search(){
   const asWallet=/^0x[0-9a-fA-F]{40}$/.test(query)&&!d.rows.some(t=>t.address===query.toLowerCase())
    ?'<a href="/wallet/'+esc(query.toLowerCase())+'"><span class="search-token"><span class="token-icon">\u25ce</span><span><b>Wallet</b><small>'+esc(short(query))+' \u00b7 see what it holds</small></span></span></a>':'';
   $('search-results').innerHTML=asWallet+d.rows.map(t=>'<a href="/token/'+esc(t.address)+'"><span class="search-token">'+icon(t)+'<span><b>'+esc(t.symbol)+'</b><small>'+esc(t.name)+'</small></span></span><span class="mono" title="Market cap">'+(valid(t.marketCap)?usd(t.marketCap):'\u2014')+'</span></a>').join('')||(asWallet||'<div class="side-note" style="padding:12px">No indexed token found. Coverage depends on the connected sources.</div>');
+ paintPadBadges($('search-results'),d.rows);
  }catch(e){if(e.name!=='AbortError'&&seq===searchSeq)$('search-results').textContent='Search unavailable. Try again.';}
 }
 $('global-search').addEventListener('input',()=>{searchSeq++;searchController?.abort();clearTimeout(searchTimer);searchTimer=setTimeout(search,220);});
@@ -146,15 +161,14 @@ function paintDetail(d){
  $('detail-metrics').innerHTML='<h2 class="details-title">Market overview</h2>'
   +'<div class="metrics two">'+[['Price USD',price(t.price)],['FDV',usd(t.fdv??t.marketCap)]]
     .map(([l,v])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b></div>').join('')+'</div>'
-  +'<div class="metrics three">'+[['Liquidity',usd(t.liquidity)],['Burned',valid(t.deadBurnedPercent)?Number(t.deadBurnedPercent).toLocaleString('en-US',{maximumFractionDigits:6})+'%':'\u2014'],['Mkt cap',usd(t.marketCap)]]
+  +'<div class="metrics three">'+[['Liquidity',usd(t.liquidity)],['Burned',valid(t.deadBurnedPercent)?burnPercent(t.deadBurnedPercent):(t.burnLoading?'Reading…':'\u2014')],['Mkt cap',usd(t.marketCap)]]
     .map(([l,v])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b></div>').join('')+'</div>'
   +'<div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'
   +pair('Txns',{total:count(t.transactions),buy:count(t.buys),sell:count(t.sells)},null,'Buys','Sells',share(t.buys,t.sells))
-  +pair('Volume · 24h',{total:usd(t.volume),buy:usd(t.buyVolume??t.recentBuyVolume),sell:usd(t.sellVolume??t.recentSellVolume)},null,t.buyVolume==null?'Recent buy vol':'Buy vol · 24h',t.sellVolume==null?'Recent sell vol':'Sell vol · 24h',share(t.buyVolume,t.sellVolume))
-  +pair('Traders · 24h',{total:count(t.traders),buy:count(t.buyers??t.recentBuyers),sell:count(t.sellers??t.recentSellers)},null,t.buyers==null?'Recent buyers':'Buyers · 24h',t.sellers==null?'Recent sellers':'Sellers · 24h',share(t.buyers,t.sellers))
-  +(t.buyVolume==null&&valid(t.recentTradeCount)?'<div class="side-note">Recent breakdown: '+count(t.recentTradeCount)+' received trades within 24h; not a complete 24h total.</div>':'')
+  +'<div class="pair"><div class="pair-head"><small>Volume · 24h</small></div><div class="pair-values"><b>'+usd(t.volume)+'</b></div></div>'
+  +'<div class="pair"><div class="pair-head"><small>Traders · 24h</small></div><div class="pair-values"><b>'+count(t.traders)+'</b></div></div>'
   +'<div class="facts"><div><span>Holders</span><span>'+count(t.holders)+'</span></div>'
-   +'<div><span>Burned</span><span>'+(valid(t.burned)?count(t.burned)+(valid(t.burnedPercent)?' \u00b7 '+Number(t.burnedPercent).toFixed(2)+'%':''):'\u2014')+'</span></div>'
+   +'<div title="Dead address balance / current total supply"><span>Burned</span><span>'+burnPercent(t.deadBurnedPercent)+'</span></div>'
    +'<div><span>Created</span><span title="'+esc(date(t.createdAt))+'">'+since(t.createdAt)+'</span></div>'
    +'<div><span>Last trade</span><span>'+since(t.lastTradeAt)+'</span></div>'
    +'<div><span>Pool</span><span>'+esc(short(t.pool))+'</span></div>'
@@ -167,6 +181,7 @@ function paintDetail(d){
  // pending, are not things the reader has to act on, so those notices are not shown.
  $('chart-error').textContent=d.errors?.chart?'Chart refresh unavailable. Previously loaded candles are retained.':'';
  $('trade-error').textContent=d.errors?.trades?'Transaction refresh unavailable.':'';
+ $('token-heading').querySelector('h1')?.insertAdjacentHTML('beforeend',padBadge(t));
  if(window.LightweightCharts){setupChart();
  const scale=chartScale(t),k=scale.factor,fmt=scale.format;
  document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x.dataset.scale===scaleMode));

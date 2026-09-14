@@ -1,6 +1,6 @@
 import {q} from './db.js';
 import {directDetail,number} from './direct.js';
-import {mapMarket} from './market-service.js';
+import {mapMarket,burnFields} from './market-service.js';
 import {recentTrades} from './onchain.js';
 import {crossQuote,nonUsdQuote} from './quote-values.js';
 const cache=new Map(),flights=new Set();
@@ -19,7 +19,7 @@ export async function liveMarket(address){
  address=address.toLowerCase();
  const row=(await q('SELECT t.*,l.launchpad_id FROM tokens t LEFT JOIN launches l ON l.token=t.address WHERE t.address=$1',[address]))[0];
  if(!row)return null;
- const market=mapMarket(row),old=cache.get(address);
+ const market={...mapMarket(row),...burnFields(row)},old=cache.get(address);
  if((!old||old.until<Date.now())&&!flights.has(address)&&flights.size<8){
   flights.add(address);
   directDetail(market.chartProvider||market.source,address,'1m',true).then(remote=>{

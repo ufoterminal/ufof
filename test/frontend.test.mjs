@@ -33,7 +33,7 @@ test('only a real chart failure is shown as a warning',()=>{
 
 test('burned supply has a place in the market overview',()=>{
  assert.ok(terminal.includes("<span>Burned</span>"),'the figure is rendered');
- assert.ok(terminal.includes('t.burnedPercent'),'its share of supply is shown when known');
+ assert.ok(terminal.includes('burnPercent(t.deadBurnedPercent)'),'the verified dead-address share is shown when known');
 });
 
 test('the chart can be shown as price or as market cap',()=>{
@@ -79,9 +79,11 @@ test('the market row is trimmed to fit a laptop screen without sideways scrollin
  assert.ok(/\.market-table th,\.market-table td\{padding-left:8px/.test(css),'the number columns give up a little padding');
 });
 
-test('the launchpad tag is gone from every surface',()=>{
- assert.ok(!terminal.includes('sourceName('),'no row, heading, search result or fact names a pad');
- assert.ok(!terminal.includes('source-filter'),'and there is no filter to pick one');
+test('launchpad labels use provenance, not the market data source',()=>{
+ assert.ok(terminal.includes('launchpadId(t.launchpad)'));
+ assert.ok(terminal.includes('launchpad-filter'));
+ assert.ok(terminal.includes("paintPadBadges($('market-rows'),d.rows)"));
+ assert.ok(terminal.includes("paintPadBadges($('search-results'),d.rows)"));
 });
 
 test('an address that is not a listed token is offered as a wallet',()=>{
@@ -112,4 +114,3 @@ test('chart colours are deep enough for the axis label to read white',()=>{
  assert.ok(terminal.includes("upColor:'#17a97f'")&&terminal.includes("downColor:'#e03b53'"),'candles use the deeper pair');
  assert.ok(!terminal.includes("upColor:'#39dbaa'"),'the bright pair that produced dark label text is gone');
 });
-

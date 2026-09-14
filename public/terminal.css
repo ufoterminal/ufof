@@ -88,6 +88,9 @@
 .pair-values{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:baseline;margin-top:4px;font-size:13px}
 .pair-values b{font-size:15px}
 .pair .ratio{margin-top:8px}
+.launchpad-tag{display:inline-block;margin-left:7px;padding:2px 5px;border:1px solid #345173;border-radius:4px;background:#13263b;color:#91b8e1;font:9px var(--mono);font-weight:400;vertical-align:middle;white-space:nowrap}
+.token-head .launchpad-tag{font-size:10px}
+#launchpad-filter{max-width:160px}
 .trade-arrival{animation:trade-arrival .75s ease-out}
 @keyframes trade-arrival{from{background:rgba(32,184,146,.18)}to{background:transparent}}
 @media(prefers-reduced-motion:reduce){.trade-arrival{animation:none}}
