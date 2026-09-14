@@ -11,6 +11,7 @@ import {tokenHolders} from './holders.js';
 import {poolAddresses,V4_POOL_MANAGER} from './onchain.js';
 import {holderMap,requestHolderMap,setHolderMapPaused} from './holder-map.js';
 import {metadataStatus} from './token-metadata.js';
+import {retentionStatus} from './retention.js';
 import {walletHoldings} from './wallet.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
@@ -47,7 +48,7 @@ app.get('/api/wallet/:address',route(async(req,res)=>{
  };
  res.json(await walletHoldings(req.params.address,lookup));
 }));
-app.get('/api/onchain',route(async(_,res)=>res.json({...await onchainStatus(),metadata:await metadataStatus()})));
+app.get('/api/onchain',route(async(_,res)=>res.json({...await onchainStatus(),metadata:await metadataStatus(),retention:await retentionStatus()})));
 app.get('/api/indexer',route(async(_,res)=>res.json(await snapshotStatus())));
 app.get('/api/markets',route(async(req,res)=>res.json({...await listMarkets(req.query),status})));
 app.get('/api/screener',route(async(req,res)=>res.json({...await listMarkets(req.query),status})));

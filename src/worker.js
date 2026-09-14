@@ -4,6 +4,7 @@ import {frames,requestSnapshot,claimJob,finishJob,publishSnapshot,initSnapshots}
 import {drainHolderMaps,seedHolderMaps} from './holder-map.js';
 import {scanPadsInBackground} from './pad-registry.js';
 import {readPadMetadata,readDiscoveredMetadata} from './token-metadata.js';
+import {runRetention} from './retention.js';
 import {onchainSync,findPoolsFor,tokensMissingPools} from './onchain.js';
 import {namePadLaunches} from './direct.js';
 import {refreshRegistryInBackground} from './argus.js';
@@ -56,6 +57,13 @@ export function startWorker(){
   later(indexer,worked?500:2500);
  }
  indexer();
+ // Housekeeping: summarise old trading into daily rows and drop the raw trades behind it. Off unless
+ // RETENTION_ENABLED is set, so nothing is removed until someone decides the tape has grown enough.
+ async function housekeeping(){
+  try{await runRetention();}catch(e){console.error('[retention]',e.message);}
+  later(housekeeping,3600000);
+ }
+ housekeeping();
  registries();
  maps();
  for(let i=0;i<Math.max(1,Math.min(4,Number(process.env.INDEXER_CONCURRENCY)||2));i++)run();

@@ -394,6 +394,17 @@ export async function tokensMissingPools(limit=POOL_LOOKUP){
  return rows.map(r=>r.token);
 }
 
+// The newest trades we hold for a token, straight from the tape the indexer keeps at the chain head.
+export async function recentTrades(token,limit=100){
+ await init();
+ const address=String(token||'').toLowerCase();
+ if(!/^0x[0-9a-f]{40}$/.test(address))return [];
+ const rows=await q(`SELECT at,price,usd_volume,buy,trader,tx FROM onchain_trades
+  WHERE token=$1 ORDER BY at DESC,block DESC,log_index DESC LIMIT $2`,[address,Math.max(1,Math.min(500,limit))]);
+ return rows.map(r=>({at:Number(r.at),price:Number(r.price),usd_volume:Number(r.usd_volume),
+  buy:r.buy===true,trader:r.trader||null,tx:r.tx||null}));
+}
+
 export async function knownNames(addresses){
  await init();
  const list=[...new Set((addresses||[]).map(a=>String(a||'').toLowerCase()))].filter(a=>/^0x[0-9a-f]{40}$/.test(a));

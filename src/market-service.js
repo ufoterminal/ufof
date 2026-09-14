@@ -4,7 +4,7 @@ import {ownChart} from './chart-engine.js';
 import {SOURCES} from '../public/sources.js';
 import {persistRecords} from './providers.js';
 import {requestSnapshot,readSnapshot,publishSnapshot,initSnapshots} from './snapshots.js';
-import {readBurned} from './onchain.js';
+import {readBurned,recentTrades} from './onchain.js';
 import {launchMeta} from './argus.js';
 let snapshot=null,until=0,inflight=null;
 const sources=new Set(Object.keys(SOURCES));
@@ -135,7 +135,12 @@ export async function buildMarket(address,tf='1h'){
   if(burn&&burn.burned>=1){market.burned=burn.burned;market.burnedPercent=burn.percent;market.circulating=burn.circulating;}
  }catch{/* the panel simply omits it */}
  try{market.originalTicker=await isOriginalTicker(market.address,market.symbol);}catch{/* the mark is simply absent */}
- const trades=remote?.trades||[];
+ // The trade list is taken from our own tape when it is ahead, because the indexer follows the chain head
+ // continuously while a chart store is only refreshed when somebody is looking at that token. This is what
+ // made transactions arrive a minute or more after they happened.
+ const tape=await recentTrades(address,100).catch(()=>[]);
+ const fromProvider=remote?.trades||[];
+ const trades=(tape.length&&(!fromProvider.length||(tape[0]?.at||0)>=(fromProvider[0]?.at||0)))?tape:fromProvider;
  if(trades[0]?.at)market.lastTradeAt=validTime(trades[0].at)||market.lastTradeAt;
  // The price is not taken from the last candle. Each timeframe's snapshot is prepared at its own moment,
  // so reading the price off the chart made the same token show a different price on 1m than on 1d, and
