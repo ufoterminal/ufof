@@ -205,6 +205,9 @@ export function candlesFromTrades(trades,seconds){
   }
   return [...buckets.values()].sort((a,b)=>a.bucket-b.bucket).slice(-500);
 }
+// Only a web link is kept; anything else a feed puts in these fields is dropped rather than rendered.
+const safeLink=v=>{const x=String(v||'').trim();return /^https?:\/\//i.test(x)?x:null;};
+
 export function normalizeDirect(id,json,now=Math.floor(Date.now()/1000)){
   // The registry path only takes over when the payload actually carries a registry. A pad's own field
   // mapping stays reachable under the same id, which is what kept this change from rewriting every pad.
@@ -263,6 +266,28 @@ export function normalizeDirect(id,json,now=Math.floor(Date.now()/1000)){
       provider_updated_at:now,spark:[],changes:{'5m':null,'1h':null,'6h':null,'24h':null}}});
    }
    return rows;
+  }
+  if(id==='dyor'){
+   // DYOR's own list. Its figures are in the pair token's units, USDC at six decimals, and it publishes no
+   // price: market cap over supply is not something to guess, so price is left to our own chain reading.
+   const items=Array.isArray(json.items)?json.items:Array.isArray(json.data)?json.data:[];
+   return items.map(t=>{
+    const address=String(t.token||'').toLowerCase();
+    if(!/^0x[0-9a-f]{40}$/.test(address))return null;
+    const unit=10**(number(t.pairDecimals)??6);
+    const scale=v=>{const n=number(v);return n==null?null:n/unit;};
+    const created=number(t.created_at);
+    const seconds=created==null?null:(created>1e12?Math.floor(created/1000):created);
+    const traded=number(t.lastTradeAt);
+    return {address,name:String(t.name||''),symbol:String(t.symbol||''),decimals:18,total_supply:null,
+     creation_at:seconds,launchpad_id:'dyor',factory:String(t.factory||'').toLowerCase()||null,
+     metadata:{feed_schema:2,source:'dyor',data_provider:'dyor',versions:[],
+      mcap:scale(t.marketCapEth),liquidity:scale(t.liquidityEth),volume24h:scale(t.volume24hWei),
+      token_created_at:seconds,last_trade_at:traded==null?null:(traded>1e12?Math.floor(traded/1000):traded),
+      provider_updated_at:now,logo:safeLink(t.image),website:safeLink(t.website),twitter:safeLink(t.x),
+      telegram:safeLink(t.telegram),description:typeof t.description==='string'&&t.description.trim()?t.description.trim().slice(0,500):null,
+      graduated:t.graduated===true}};
+   }).filter(Boolean);
   }
   if(id==='noxa'){
    if(!Array.isArray(json.tokens))throw Error('Noxa unexpected token list');

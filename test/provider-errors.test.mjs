@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {directDetail,cachedJson,candlesFromTrades,ownList,warpDaily,normalizeChart} from '../src/direct.js';
+import {directDetail,cachedJson,candlesFromTrades,ownList,warpDaily,normalizeChart,normalizeDirect} from '../src/direct.js';
 test('shared candles aggregate OHLCV without double-counting snapshots or filling gaps',()=>{
  const a={time:1800000000000,open:2,high:4,low:1,close:3,volume:5};
  const d=normalizeChart([a,{time:1800000300,open:3,high:6,low:2,close:5,volume:7},a,{time:1800001800,open:5,high:5,low:4,close:4,volume:1}],900);
@@ -51,4 +51,21 @@ test('DYOR detail keeps trades while its API has no chart endpoint',async()=>{
  const original=globalThis.fetch;
  globalThis.fetch=async url=>({ok:true,json:async()=>url.endsWith('/trades?limit=100')?{items:[{created_at:1700000000000,side:'BUY',amount_eth:'50000000',amount_token:'10000000000000000000000',trader:'0x'+'1'.repeat(40),tx_hash:'0x'+'2'.repeat(64)}]}:{chain:'arc',chainId:5042,marketCapEth:'1000000000'}});
  try{const d=await directDetail('dyor','0x'+'e'.repeat(40));assert.equal(d.trades.length,1);assert.equal(d.trades[0].usd_volume,50);assert.equal(d.trades[0].price,.005);assert.equal(d.candles.length,1);assert.equal(d.candles[0].close,.005);}finally{globalThis.fetch=original;}
+});
+
+test('DYOR list figures are read in the pair token\u2019s units and no price is invented',()=>{
+ const [row]=normalizeDirect('dyor',{items:[{token:'0x'+'a'.repeat(40),name:'Bean',symbol:'BEAN',
+  pairDecimals:6,marketCapEth:'9117952758',liquidityEth:'8433048',volume24hWei:'83028952',
+  created_at:1789331367000,lastTradeAt:1789342883000,image:'https://x/y.png',website:'javascript:alert(1)',
+  x:'https://x.com/bean',factory:'0x'+'f'.repeat(40)}]});
+ assert.equal(row.symbol,'BEAN');
+ assert.ok(Math.abs(row.metadata.mcap-9117.952758)<1e-6,'figures are scaled by the pair token decimals');
+ assert.ok(Math.abs(row.metadata.liquidity-8.433048)<1e-6);
+ assert.ok(Math.abs(row.metadata.volume24h-83.028952)<1e-6);
+ assert.equal(row.metadata.price,undefined,'DYOR publishes no price, so none is guessed');
+ assert.equal(row.metadata.logo,'https://x/y.png');
+ assert.equal(row.metadata.website,null,'a link that is not a web link is dropped');
+ assert.equal(row.metadata.twitter,'https://x.com/bean');
+ assert.equal(row.creation_at,1789331367,'milliseconds become seconds');
+ assert.deepEqual(normalizeDirect('dyor',{items:[{token:'nope'}]}),[],'an entry without an address is not a row');
 });
