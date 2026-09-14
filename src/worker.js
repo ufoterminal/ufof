@@ -53,7 +53,7 @@ export function startWorker(){
    const linked=waiting.length?await findPoolsFor(waiting):[];
    worked=!!(p.pools||p.trades||linked.length);
   }catch(e){console.error('[indexer]',e.message);}
-  later(indexer,worked?1000:5000);
+  later(indexer,worked?500:2500);
  }
  indexer();
  registries();

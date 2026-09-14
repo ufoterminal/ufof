@@ -114,3 +114,5 @@ test('chart colours are deep enough for the axis label to read white',()=>{
  assert.ok(terminal.includes("upColor:'#17a97f'")&&terminal.includes("downColor:'#e03b53'"),'candles use the deeper pair');
  assert.ok(!terminal.includes("upColor:'#39dbaa'"),'the bright pair that produced dark label text is gone');
 });
+
+

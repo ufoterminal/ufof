@@ -99,3 +99,15 @@ test('a token with no symbol is still a row, ranked like any other',()=>{
  assert.equal(rows.length,2,'an unnamed token is not dropped from the list');
  assert.equal(rows[0].volume,5000,'the list ranks by trading, not by whether we have read its name yet');
 });
+
+test('the browsable list stops at a cap while search still reaches everything',()=>{
+ const all=Array.from({length:1200},(_,i)=>token(i+1,{symbol:'T'+i,volume:1200-i}));
+ const list=selectMarkets(all,{limit:50},now);
+ assert.equal(list.total,500,'the list itself is capped');
+ assert.equal(list.pages,10,'which is ten pages of fifty');
+ assert.equal(list.held,1200,'and it says how many are actually held');
+ assert.equal(list.rows[0].volume,1200,'the cap keeps the busiest, not an arbitrary slice');
+ const deep=all[900];
+ const found=selectMarkets(all,{q:deep.symbol},now);
+ assert.equal(found.rows[0].symbol,deep.symbol,'a token past the cap is still found by search');
+});

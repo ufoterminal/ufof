@@ -62,9 +62,15 @@ export function selectMarkets(all,options={},now=Math.floor(Date.now()/1000)){
   const av=value(a),bv=value(b);if(av==null&&bv!=null)return 1;if(bv==null&&av!=null)return -1;
   return (av!=null&&bv!=null?(av-bv)*direction:0)||a.address.localeCompare(b.address);
  });
+ // The browsable list stops at a few hundred rows. Everything else is still held, still searchable and
+ // still indexed; it simply is not something anyone pages through. A search is never capped, because there
+ // the reader has named what they are looking for.
+ const cap=Math.max(50,Math.min(5000,Number(process.env.LIST_CAP||500)));
+ const held=rows.length;
+ if(!query&&rows.length>cap)rows=rows.slice(0,cap);
  const limit=Math.min(100,Math.max(10,Math.floor(Number(options.limit)||50))),pages=Math.max(1,Math.ceil(rows.length/limit));
  const page=Math.min(pages,Math.max(1,Math.floor(Number(options.page)||1)));
- return {rows:rows.slice((page-1)*limit,page*limit),total:rows.length,page,pages,limit,
+ return {rows:rows.slice((page-1)*limit,page*limit),total:rows.length,held,page,pages,limit,
   stats:{active:activeRows.length,archived:all.length,volume:sum(activeRows,'volume'),liquidity:sum(activeRows,'liquidity'),transactions:sum(activeRows,'transactions'),partial:true},
   trending:activeRows.filter(r=>r.price!=null).sort((a,b)=>(b.volume||0)-(a.volume||0)).slice(0,8),
   sources:[...new Set(all.map(r=>r.source).filter(Boolean))].map(id=>({id,markets:activeRows.filter(r=>r.source===id).length})),
@@ -181,12 +187,15 @@ export async function getMarket(address,tf='1h'){
   }
  }
  await requestSnapshot(address,tf,10);
+ // The other timeframes of a token someone is looking at are prepared behind them, at lower priority.
+ // Switching is then a read rather than a build, which is what made it feel slow the first time.
+ for(const frame of ['1m','5m','15m','1h','4h','1d'])if(frame!==tf)requestSnapshot(address,frame,3).catch(()=>null);
  const saved=await readSnapshot(address,tf);
  // A snapshot older than a few seconds is rebuilt here rather than served as it stands. It was only ever
  // refreshed by the background worker, so a page could show trades and candles from a minute ago, and each
  // timeframe was prepared at its own moment and therefore disagreed with the others.
  const age=saved?Date.now()-saved.updated:Infinity;
- const stale=age>Math.max(2000,Number(process.env.DETAIL_MAX_AGE_MS||12000));
+ const stale=age>Math.max(1000,Number(process.env.DETAIL_MAX_AGE_MS||4000));
  // What we already hold is served straight away, and a stale one is rebuilt behind the request instead of
  // in front of it. Waiting for the rebuild made every page load after a restart sit on an empty chart,
  // even though the candles were already in the database; the page polls, so the fresh build arrives on its
