@@ -38,7 +38,9 @@ export const poolsTradeKnown=[{address:'0x4753c45fb550fecaa143a47968659117e6ffc2
 const poolsTradeApi='https://pools.trade/api/trpc';
 const poolsTradeCall=(procedure,input)=>poolsTradeApi+'/'+procedure+'?batch=1&input='+encodeURIComponent(JSON.stringify({'0':input}));
 const cache=new Map(),pending=new Map();
-export async function cachedJson(url,ttl=30000){
+// `accept` decides whether an answer is worth keeping. Providers that report their failures in a 200 body
+// were cached like any other answer, so a retry within the TTL was handed back the same failure.
+export async function cachedJson(url,ttl=30000,accept){
   const hit=cache.get(url);if(hit&&hit.until>Date.now())return hit.value;
   if(pending.has(url))return pending.get(url);
   const work=(async()=>{const r=await fetch(url,{signal:AbortSignal.timeout(12000),headers:{accept:'application/json'}});
@@ -48,7 +50,8 @@ export async function cachedJson(url,ttl=30000){
     if(endpoint.origin==='https://api.radardex.pro'&&endpoint.pathname==='/tokens')
       value=await enrichQuoteRows(value,address=>cachedJson('https://api.radardex.pro/token/'+address,ttl));
     if(cache.size>=300)cache.delete(cache.keys().next().value);
-    cache.set(url,{value,until:Date.now()+ttl});return value;
+    if(!accept||accept(value))cache.set(url,{value,until:Date.now()+ttl});
+    return value;
   })().finally(()=>pending.delete(url));pending.set(url,work);return work;
 }
 export const number=x=>x==null||x===''||!Number.isFinite(Number(x))?null:Number(x);

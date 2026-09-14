@@ -33,7 +33,7 @@ test('only a real chart failure is shown as a warning',()=>{
 
 test('burned supply has a place in the market overview',()=>{
  assert.ok(terminal.includes("<span>Burned</span>"),'the figure is rendered');
- assert.ok(terminal.includes('burnPercent(t.deadBurnedPercent)'),'the verified dead-address share is shown when known');
+ assert.ok(terminal.includes('burnParts(t,count)'),'the amount taken out of supply and its share are both shown');
 });
 
 test('the chart can be shown as price or as market cap',()=>{

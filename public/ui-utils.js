@@ -2,6 +2,18 @@ import {SOURCES} from './sources.js';
 export const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const valid=n=>n!==null&&n!==undefined&&n!==''&&Number.isFinite(Number(n));
 export const price=n=>!valid(n)?'—':'$'+Number(n).toLocaleString('en-US',{maximumSignificantDigits:6});
+// For narrow cards: a run of leading zeros is written as a subscript count, $0.0₄2612 for $0.00002612, so
+// a tiny price keeps its significant digits instead of being cut off.
+const SUBSCRIPT='₀₁₂₃₄₅₆₇₈₉';
+export function compactPrice(value){
+ if(!valid(value))return '—';
+ const n=Number(value);
+ if(n<=0||n>=0.001)return n>=1?price(n):'$'+n.toLocaleString('en-US',{maximumSignificantDigits:4});
+ const [mantissa,exponent]=n.toExponential(3).split('e');
+ const zeros=-Number(exponent)-1;
+ const digits=mantissa.replace('.','').replace(/0+$/,'')||'0';
+ return '$0.0'+String(zeros).split('').map(d=>SUBSCRIPT[d]).join('')+digits;
+}
 // Axis labels only: suppress floating-point residue at zero, not real tiny prices.
 export function chartPrice(value,minMove=0){
  if(!valid(value))return '—';

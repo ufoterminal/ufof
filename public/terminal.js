@@ -1,6 +1,6 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
 import {updateSeries,reconcileTrades,burnText,burnParts} from './live-ui.js';
-import {esc,valid,price,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
+import {esc,valid,price,compactPrice,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
 const wallet=location.pathname.startsWith('/wallet/')?location.pathname.split('/').pop():null;
@@ -23,8 +23,7 @@ async function loadLive(){
   const d=await api('/api/live/'+encodeURIComponent(address),liveController);
   liveData=d;liveAt=Date.now();liveFailures=0;
   if(currentDetail){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
-  if(panel==='trades')$('panel-note').textContent=d.pending?'Connecting to live feed':d.stale?'Source delayed · retaining data':'Live feed · '+(d.lastTradeAt?'last trade '+age(d.lastTradeAt)+' ago':'waiting for trades');
- }catch(e){if(e.name!=='AbortError'){liveFailures++;if(panel==='trades')$('panel-note').textContent='Reconnecting · retaining trades';}}
+ }catch(e){if(e.name!=='AbortError')liveFailures++;}
  finally{liveBusy=false;if(!document.hidden)liveTimer=setTimeout(loadLive,Math.min(15000,1500*2**Math.min(liveFailures,4)));}
 }
 let state={mode:params.get('mode')==='watch'?'watch':'active',page:1,sort:'volume',dir:'desc',source:'',version:'',venue:'',minLiquidity:'',minVolume:''};
@@ -105,7 +104,7 @@ document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA'].in
 document.addEventListener('click',e=>{if(!e.target.closest('.searchbox'))$('search-results').hidden=true;});
 let chart,candleSeries,lineSeries,volumeSeries,chartTokenTf=null;
 function detailShell(){
- app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart scale"><button data-scale="price" class="'+(scaleMode==='price'?'active':'')+'">Price</button><button data-scale="mc" class="'+(scaleMode==='mc'?'active':'')+'">MC</button></div><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><button class="panel-tab" data-panel="same">SAME TICKER</button><button class="panel-tab" data-panel="map">HOLDER MAP</button><span id="trade-count"></span><span style="margin-left:auto" id="panel-note">Most recent · source feed</span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th></tr></thead><tbody id="holders"><tr><td colspan="4" class="empty">Loading holders…</td></tr></tbody></table><table class="trades-table" id="same-table" hidden><thead><tr><th>TOKEN</th><th>PRICE</th><th>MCAP</th><th>VOLUME</th><th>AGE</th></tr></thead><tbody id="same"><tr><td colspan="5" class="empty">Looking for tokens with this ticker…</td></tr></tbody></table><div id="map-panel" hidden><div class="map-note" id="map-status">Reading the transfer history…</div><div class="map-layout"><div class="map-canvas" id="map-canvas"></div><div class="map-clusters" id="map-clusters"></div></div></div></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
+ app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart scale"><button data-scale="price" class="'+(scaleMode==='price'?'active':'')+'">Price</button><button data-scale="mc" class="'+(scaleMode==='mc'?'active':'')+'">MC</button></div><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><button class="panel-tab" data-panel="same">SAME TICKER</button><button class="panel-tab" data-panel="map">HOLDER MAP</button><span id="trade-count"></span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th></tr></thead><tbody id="holders"><tr><td colspan="4" class="empty">Loading holders…</td></tr></tbody></table><table class="trades-table" id="same-table" hidden><thead><tr><th>TOKEN</th><th>PRICE</th><th>MCAP</th><th>VOLUME</th><th>AGE</th></tr></thead><tbody id="same"><tr><td colspan="5" class="empty">Looking for tokens with this ticker…</td></tr></tbody></table><div id="map-panel" hidden><div class="map-note" id="map-status">Reading the transfer history…</div><div class="map-layout"><div class="map-canvas" id="map-canvas"></div><div class="map-clusters" id="map-clusters"></div></div></div></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
  app.addEventListener('click',e=>{const b=e.target.closest('[data-tf]');if(b){tf=b.dataset.tf;history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode+'&scale='+scaleMode);document.querySelectorAll('[data-tf]').forEach(x=>x.classList.toggle('active',x===b));loadDetail({keepFlow:true});}const v=e.target.closest('[data-view]');if(v){viewMode=v.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===v));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}const sc=e.target.closest('[data-scale]');if(sc){scaleMode=sc.dataset.scale;document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x===sc));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode+'&scale='+scaleMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}
   if(e.target.closest('#fit-chart'))chart?.timeScale().fitContent();const copy=e.target.closest('[data-copy]');if(copy)navigator.clipboard.writeText(copy.dataset.copy).then(()=>toast('Address copied')).catch(()=>toast('Copy not available'));const s=e.target.closest('[data-star]');if(s){saveWatch(s.dataset.star);if(currentDetail)paintDetail(currentDetail);}});
 }
@@ -159,12 +158,19 @@ function paintDetail(d){
   +(valid(ratio)?'<div class="ratio"><span style="width:'+ratio+'%"></span></div>':'')+'</div>';
  const share=(x,y)=>valid(x)&&valid(y)&&(x+y)>0?x/(x+y)*100:null;
  const burn=burnParts(t,count);
- $('detail-metrics').innerHTML='<h2 class="details-title">Market overview</h2>'
-  +'<div class="metrics two">'+[['Price USD',price(t.price)],['FDV',usd(t.fdv??t.marketCap)]]
-    .map(([l,v])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b></div>').join('')+'</div>'
-  // The card is too narrow for both figures on one line, so the share sits under the amount.
-  +'<div class="metrics three">'+[['Liquidity',usd(t.liquidity)],['Burned',burn.amount||burn.share||burn.unknown,burn.amount?burn.share:null],['Mkt cap',usd(t.marketCap)]]
-    .map(([l,v,sub])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b>'+(sub?'<i>'+sub+'</i>':'')+'</div>').join('')+'</div>'
+ // Who the token is and where it lives come before any figure about it. Only links that parse as web
+ // addresses are drawn, so a malformed or scripted value from a feed never becomes a clickable link.
+ const links=[['Website',t.website,'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>'],
+  ['X',t.twitter,'<path d="M5 5l14 14M19 5L5 19"/>'],
+  ['Telegram',t.telegram,'<path d="M21 4L3 11l6 2 2 6 3-4 5 4 2-15z"/><path d="M9 13l12-9"/>']]
+  .filter(([,url])=>safeUrl(url))
+  .map(([label,url,shape])=>'<a class="identity-link" href="'+esc(safeUrl(url))+'" target="_blank" rel="noopener noreferrer" aria-label="'+label+'" title="'+label+'"><svg viewBox="0 0 24 24" aria-hidden="true">'+shape+'</svg></a>').join('');
+ $('detail-metrics').innerHTML='<div class="identity">'+icon(t)+'<div class="identity-name"><b>'+esc(t.symbol||'?')+'</b>'+padBadge(t)+'<small>'+esc(t.name||short(t.address))+'</small></div>'+(links?'<div class="identity-links">'+links+'</div>':'')+'</div>'
+  +'<h2 class="details-title">Market overview</h2>'
+  // The burn gets a line of its own, so the amount and its share read together without squeezing a card.
+  +'<div class="burn-banner"><span>Tokens burned:</span><b>'+(burn.amount||burn.share||burn.unknown)+'</b>'+(burn.amount&&burn.share?'<i>('+burn.share+')</i>':'')+'</div>'
+  +'<div class="metrics three">'+[['Price',compactPrice(t.price),price(t.price)],['Liquidity',usd(t.liquidity)],['Mkt cap',usd(t.marketCap)]]
+    .map(([l,v,full])=>'<div class="metric"><small>'+l+'</small><b'+(full?' title="'+esc(full)+'"':'')+'>'+v+'</b></div>').join('')+'</div>'
   +'<div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'
   +pair('Txns',{total:count(t.transactions),buy:count(t.buys),sell:count(t.sells)},null,'Buys','Sells',share(t.buys,t.sells))
   +'<div class="pair"><div class="pair-head"><small>Volume · 24h</small></div><div class="pair-values"><b>'+usd(t.volume)+'</b></div></div>'
@@ -200,7 +206,6 @@ function paintDetail(d){
   if(scale.unavailable)$('chart-error').textContent='Market cap needs a supply figure this token has not reported; showing price.';
  }else if(!d.errors?.chart||chartTokenTf!==tf){updateSeries(candleSeries,[],true);updateSeries(lineSeries,[],true);updateSeries(volumeSeries,[],true);$('chart-empty').style.display='grid';$('chart-empty').textContent=d.supported?'No candles available for this timeframe.':'Chart integration is not available for this source yet.';$('chart-legend').textContent='No price history';}}
  else{$('chart-empty').textContent='Chart library could not load. Refresh to retry.';}
- if(panel==='trades')$('trade-count').textContent=d.trades.length+' trades';
  reconcileTrades($('trades'),d.trades,s=>'<td title="'+esc(date(s.at))+'">'+age(s.at)+' ago</td><td class="'+(s.buy?'up':'down')+'">'+(s.buy?'Buy':'Sell')+'</td><td>'+usd(s.usd_volume)+'</td><td>'+price(s.price)+'</td><td>'+esc(short(s.trader))+'</td><td>'+(/^0x[0-9a-f]{64}$/i.test(s.tx||'')?'<a href="https://arc-scan.org/tx/'+esc(s.tx)+'" target="_blank" rel="noopener">'+esc(short(s.tx))+' ↗</a>':'—')+'</td>','<tr><td colspan="6" class="empty">'+(d.errors?.trades?'Could not load recent trades.':'No recent trades returned by this source.')+'</td></tr>');
 }
 // The holders panel is fetched only when it is opened, and only once per token, because the list comes
@@ -211,8 +216,7 @@ function showPanel(name){
  document.querySelectorAll('[data-panel]').forEach(b=>b.classList.toggle('active',b.dataset.panel===name));
  const trades=document.querySelector('.trades-table');
  trades.hidden=name!=='trades';$('holders-table').hidden=name!=='holders';$('same-table').hidden=name!=='same';$('map-panel').hidden=name!=='map';
- $('trade-count').textContent=name==='trades'?(currentDetail?currentDetail.trades.length+' trades':''):'';
- $('panel-note').textContent=name==='trades'?'Most recent \u00b7 source feed':name==='holders'?'Largest first':name==='same'?'Same symbol, different contracts':'Links are token transfers between mapped wallets';
+ $('trade-count').textContent='';
  if(name!=='map')stopMap();
  if(name==='holders')loadHolders();
  if(name==='same')loadSame();
@@ -365,7 +369,17 @@ function walletShell(){
   +'<tbody id="wallet-rows"><tr><td colspan="6" class="empty">Reading balances\u2026</td></tr></tbody></table></section>';
 }
 
+// The explorer that answers a wallet's balances refuses often enough that one attempt left the page
+// reading as an empty wallet until it was reloaded by hand. It is asked again, and a later failure never
+// clears holdings that are already on screen.
+let walletFailures=0,walletLoaded=false,walletBusy=false,walletTimer,walletAt=0;
+// A wallet moves far less than a chart, so a settled page is refreshed slowly and only a failure hurries.
+const walletDelay=()=>walletFailures?Math.min(20000,2000*2**Math.min(walletFailures,3)):30000;
 async function loadWallet(){
+ // Showing the tab asks for a refresh, and without this a few quick switches stacked requests on top of
+ // each other until every one of them was slower than the last.
+ if(walletBusy)return;
+ clearTimeout(walletTimer);walletBusy=true;
  try{
   const d=await api('/api/wallet/'+encodeURIComponent(wallet));
   $('wallet-head').innerHTML='<a class="back" href="/" aria-label="Back to markets">\u2190</a><div><h1>Wallet</h1><span class="muted">'+esc(short(d.address))+'</span></div>'
@@ -376,10 +390,17 @@ async function loadWallet(){
    ?'<tr><td><span class="token-cell">'+usdcMark()+'<span><strong>USDC</strong><small class="muted">Arc gas token</small></span></span></td><td>'+count(d.usdc)+'</td><td>$1.00</td><td class="muted">\u2014</td><td>'+usd(d.usdc)+'</td><td>'+(valid(d.totals.usdcShare)?d.totals.usdcShare.toFixed(1)+'%':'\u2014')+'</td></tr>':'';
   const rows=d.tokens.map(t=>'<tr><td><a class="token-cell" href="/token/'+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><small class="muted">'+esc(t.name||short(t.address))+'</small></span></a></td>'
    +'<td>'+count(t.balance)+'</td><td>'+(t.price==null?'\u2014':price(t.price))+'</td><td class="'+color(t.change24h)+'">'+percent(t.change24h)+'</td><td>'+(t.value==null?'\u2014':usd(t.value))+'</td><td>'+(valid(t.share)?t.share.toFixed(1)+'%':'\u2014')+'</td></tr>').join('');
-  $('wallet-rows').innerHTML=(usdcRow+rows)||'<tr><td colspan="6" class="empty">This address holds no tokens we can see.</td></tr>';
-  if(d.errors)$('wallet-note').textContent='Balances unavailable right now';
+  // An explorer refusal is not an empty wallet, and saying so sent people looking for missing tokens.
+  $('wallet-rows').innerHTML=(usdcRow+rows)||'<tr><td colspan="6" class="empty">'+(d.errors?.tokens?'Could not read this wallet’s balances yet. Retrying…':'This address holds no tokens we can see.')+'</td></tr>';
+  $('wallet-note').textContent=d.stale?'Explorer delayed · showing the last balances read':d.errors?.tokens?'Balances unavailable right now · retrying':'Valued with the prices shown across the site';
+  walletLoaded=true;walletFailures=0;
  }catch(e){
-  $('wallet-rows').innerHTML='<tr><td colspan="6" class="empty">Balances unavailable right now.</td></tr>';
+  walletFailures++;
+  if(!walletLoaded)$('wallet-rows').innerHTML='<tr><td colspan="6" class="empty">Balances unavailable right now. Retrying…</td></tr>';
+ }
+ finally{
+  walletBusy=false;walletAt=Date.now();
+  if(!document.hidden)walletTimer=setTimeout(loadWallet,walletDelay());
  }
 }
 
@@ -394,7 +415,11 @@ setInterval(()=>{if(!document.hidden&&!address&&!wallet)loadList();},10000);
 document.addEventListener('visibilitychange',()=>{
  clearTimeout(detailTimer);
  clearTimeout(liveTimer);
+ clearTimeout(walletTimer);
  if(document.hidden){detailController?.abort();liveController?.abort();return;}
- if(address){loadDetail();loadLive();}else if(!wallet)loadList();
+ // Coming back to the tab picks the refresh up where it was due, rather than refetching what was just read.
+ if(address){loadDetail();loadLive();}
+ else if(wallet)walletTimer=setTimeout(loadWallet,Math.max(0,walletDelay()-(Date.now()-walletAt)));
+ else loadList();
 });
 window.addEventListener('pagehide',()=>{clearTimeout(detailTimer);clearTimeout(liveTimer);detailController?.abort();liveController?.abort();});
