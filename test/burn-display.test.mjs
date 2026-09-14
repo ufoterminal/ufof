@@ -1,8 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {burnPercent,burnText} from '../public/live-ui.js';
+import {burnPercent,burnText,syncNotice} from '../public/live-ui.js';
 import {burnFields} from '../src/market-service.js';
+test('the list notice only appears when the list itself has stopped refreshing',()=>{
+ const now=1800000000;
+ assert.equal(syncNotice({lastSync:now-60,lastError:'dyor: timed out'},now,true),'','one feed failing a round keeps its data and is not flagged');
+ assert.match(syncNotice({lastSync:now-400,lastError:null},now,true),/not refreshed/,'no successful round for minutes is');
+ assert.equal(syncNotice({syncing:true,lastSync:null},now,false),'Connecting to source feeds…');
+ assert.equal(syncNotice({syncing:true,lastSync:null},now,true),'');
+ assert.match(syncNotice({syncing:false,lastSync:null,lastError:'database unavailable'},now,false),/could not be refreshed/,'a first round that failed outright is');
+ assert.equal(syncNotice(undefined,now,true),'');
+});
 test('persisted dead-address readings are available without waiting for a chart or RPC',()=>{
  for(const value of [0,4.2]){
   const r=burnFields({address:'0x'+'a'.repeat(40),metadata:{burn_reading:{at:Date.now(),value:{deadPercent:value}}}});

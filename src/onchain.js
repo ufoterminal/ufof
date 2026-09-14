@@ -20,6 +20,13 @@ export const V4_POOL_MANAGER='0x8366a39cc670b4001a1121b8f6a443a643e40951';
 // The v2 style factories in use on Arc, each found by asking a live pair which factory built it rather
 // than by trusting a list. They are quiet compared with v3 and v4, but their pairs still trade.
 export const V2_FACTORIES=['0x942bd5bfdc5317c5507e326f8eb4bb6058ab5c10','0x32330c2400a6e0830d56661169ebb6c147e3577a','0x8e79e9e78511544160576f10dbd6ce2c983eb664'];
+// The exchange a factory belongs to, where we know it. A v2 pair names its venue only when its factory is one
+// of these; the others stay a plain v2 market rather than being credited to the wrong front end.
+export const DEX_BY_FACTORY={'0x942bd5bfdc5317c5507e326f8eb4bb6058ab5c10':'dyorswap-v2'};
+export const venueOf=(version,factory)=>version==='v3'||version==='v4'?'uniswap-'+version:DEX_BY_FACTORY[String(factory||'').toLowerCase()]||null;
+// Tokens looked up directly by their pairs instead of waiting for the history scan to reach the block their
+// pair was created in.
+const ENSURED_TOKENS=['0x07704b06981ea962b87296362a1281484d160000'];
 const WINDOW=10000;
 // How many history windows one pass reaches back. Higher fills the archive sooner and asks more of the
 // public RPC; the chain is about 20 million blocks, so three windows a minute covers it in roughly a day.
@@ -57,7 +64,8 @@ CREATE INDEX IF NOT EXISTS onchain_trades_token_at ON onchain_trades(token,at);
 CREATE TABLE IF NOT EXISTS onchain_cursor(k TEXT PRIMARY KEY,head BIGINT,oldest BIGINT,updated BIGINT);
 ALTER TABLE onchain_cursor ADD COLUMN IF NOT EXISTS oldest_at BIGINT;
 ALTER TABLE onchain_pools ADD COLUMN IF NOT EXISTS quote_decimals INTEGER;
-ALTER TABLE onchain_pools ADD COLUMN IF NOT EXISTS quote_token TEXT;`);
+ALTER TABLE onchain_pools ADD COLUMN IF NOT EXISTS quote_token TEXT;
+ALTER TABLE onchain_pools ADD COLUMN IF NOT EXISTS factory TEXT;`);
 
 const tapeKeys=3;
 const readCursor=async k=>(await q('SELECT head,oldest,oldest_at FROM onchain_cursor WHERE k=$1',[k]))[0]||null;
@@ -147,15 +155,16 @@ export function poolFromLog(log,bridges=new Set()){
  }
  return {pool:String(v4?a.id:(v2?a.pair:a.pool)).toLowerCase(),token:quoteIs0?c1:c0,version:v4?'v4':v2?'v2':'v3',
   fee:v2?null:Number(a.fee),tick_spacing:v2?null:Number(a.tickSpacing),hooks:v4?String(a.hooks).toLowerCase():null,
-  token_is_token0:!quoteIs0,quote_token:quoteToken,quote_decimals:quoteDecimals,created_block:Number(log.blockNumber),created_at:logTime(log)};
+  token_is_token0:!quoteIs0,quote_token:quoteToken,quote_decimals:quoteDecimals,factory:log.address?String(log.address).toLowerCase():null,created_block:Number(log.blockNumber),created_at:logTime(log)};
 }
 
 async function savePools(rows){
  for(let i=0;i<rows.length;i+=250){
-  await q(`INSERT INTO onchain_pools(pool,token,version,fee,tick_spacing,hooks,token_is_token0,quote_token,quote_decimals,created_block,created_at)
-   SELECT pool,token,version,fee,tick_spacing,hooks,token_is_token0,quote_token,quote_decimals,created_block,created_at
-   FROM jsonb_to_recordset($1::jsonb) AS x(pool text,token text,version text,fee int,tick_spacing int,hooks text,token_is_token0 boolean,quote_token text,quote_decimals int,created_block bigint,created_at bigint)
+  await q(`INSERT INTO onchain_pools(pool,token,version,fee,tick_spacing,hooks,token_is_token0,quote_token,quote_decimals,factory,created_block,created_at)
+   SELECT pool,token,version,fee,tick_spacing,hooks,token_is_token0,quote_token,quote_decimals,factory,created_block,created_at
+   FROM jsonb_to_recordset($1::jsonb) AS x(pool text,token text,version text,fee int,tick_spacing int,hooks text,token_is_token0 boolean,quote_token text,quote_decimals int,factory text,created_block bigint,created_at bigint)
    ON CONFLICT(pool) DO UPDATE SET created_at=COALESCE(onchain_pools.created_at,excluded.created_at),
+    factory=COALESCE(onchain_pools.factory,excluded.factory),
     quote_token=COALESCE(excluded.quote_token,onchain_pools.quote_token),
     quote_decimals=COALESCE(excluded.quote_decimals,onchain_pools.quote_decimals),
     created_block=LEAST(COALESCE(onchain_pools.created_block,excluded.created_block),excluded.created_block)`,[JSON.stringify(rows.slice(i,i+250))]);
@@ -319,7 +328,7 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
  const coverage=await tapeCoverage();
  const links=await chainMetadata().catch(()=>new Map());
  const [pools,tokens,trades,liquidity]=await Promise.all([
-  q('SELECT token,version,MIN(created_at) AS created_at,COUNT(*)::int AS pools FROM onchain_pools GROUP BY token,version'),
+  q('SELECT token,version,factory,MIN(created_at) AS created_at,COUNT(*)::int AS pools FROM onchain_pools GROUP BY token,version,factory'),
   q('SELECT * FROM onchain_tokens'),
   q('SELECT token,at,price,usd_volume,buy,trader FROM onchain_trades WHERE at>$1 ORDER BY token,at',[now-86400]),
   readLiquidity().catch(()=>new Map())
@@ -329,8 +338,9 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
  for(const t of trades){if(!byToken.has(t.token))byToken.set(t.token,[]);byToken.get(t.token).push(t);}
  const shape=new Map();
  for(const p of pools){
-  const entry=shape.get(p.token)||{versions:new Set(),created:null};
+  const entry=shape.get(p.token)||{versions:new Set(),venues:new Set(),created:null};
   entry.versions.add(p.version);
+  const venue=venueOf(p.version,p.factory);if(venue)entry.venues.add(venue);
   const at=p.created_at==null?null:Number(p.created_at);
   if(at!=null&&(entry.created==null||at<entry.created))entry.created=at;
   shape.set(p.token,entry);
@@ -345,12 +355,12 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
   const volume=tape.reduce((a,t)=>a+Number(t.usd_volume||0),0);
   const traders=new Set(tape.map(t=>t.trader).filter(Boolean)).size;
   const versions=[...entry.versions];
-  // A venue is only named for the two we can name with certainty. A v2 pair is recorded as v2 without
-  // claiming which exchange's front end it belongs to.
+  // A venue is named only where the factory says which exchange it is: Uniswap for v3 and v4, and a v2 pair
+  // only when its factory is a known one. The rest stay a plain v2 market.
   // Discovered from Uniswap's own factories, so that is what it is called. There is no separate on-chain
   // source any more: the same markets used to arrive twice, once from our reading and once from a feed.
   const m={feed_schema:2,source:'uniswap',data_provider:'self',versions,
-   venues:versions.filter(v=>v!=='v2').map(v=>'uniswap-'+v),provider_updated_at:now};
+   venues:[...entry.venues],provider_updated_at:now};
   // Only what we actually measured. A field we cannot compute is left unset so another source's value
   // is not overwritten with a blank.
   if(last!=null){m.price=last;if(supply>0)m.mcap=last*supply;}
@@ -461,15 +471,15 @@ export async function findPoolsFor(tokens,{limit=POOL_LOOKUP}={}){
   const asks=[
    ...V3_FACTORIES.flatMap(factory=>FEES.map(fee=>
     rpc().readContract({address:factory,abi:v3Factory,functionName:'getPool',args:[token,USDC,fee]})
-     .then(pool=>({pool,version:'v3',fee})).catch(()=>null))),
+     .then(pool=>({pool,version:'v3',fee,factory})).catch(()=>null))),
    ...V2_FACTORIES.map(factory=>
     rpc().readContract({address:factory,abi:v2Factory,functionName:'getPair',args:[token,USDC]})
-     .then(pool=>({pool,version:'v2',fee:null})).catch(()=>null))
+     .then(pool=>({pool,version:'v2',fee:null,factory})).catch(()=>null))
   ];
   for(const hit of await Promise.all(asks)){
    if(!hit?.pool||String(hit.pool).toLowerCase()===ZERO)continue;
    found.push({pool:String(hit.pool).toLowerCase(),token,version:hit.version,fee:hit.fee,
-    tick_spacing:null,hooks:null,token_is_token0:token<USDC,created_block:null,created_at:null});
+    tick_spacing:null,hooks:null,token_is_token0:token<USDC,factory:hit.factory,created_block:null,created_at:null});
   }
  }
  if(found.length)await savePools(found);
@@ -482,7 +492,8 @@ export async function tokensMissingPools(limit=POOL_LOOKUP){
  const rows=await q(`SELECT l.token,MAX(l.block) AS block FROM pad_launches l
   LEFT JOIN onchain_pools p ON p.token=l.token
   WHERE p.token IS NULL GROUP BY l.token ORDER BY MAX(l.block) DESC LIMIT $1`,[limit]);
- return rows.map(r=>r.token);
+ const held=new Set((await q('SELECT DISTINCT token FROM onchain_pools WHERE token=ANY($1::text[])',[ENSURED_TOKENS])).map(r=>r.token));
+ return [...new Set([...ENSURED_TOKENS.filter(t=>!held.has(t)),...rows.map(r=>r.token)])];
 }
 
 // The newest trades we hold for a token, straight from the tape the indexer keeps at the chain head.
@@ -535,11 +546,29 @@ export async function onchainStatus(){
  return {...counts,coverage_from:coverage,coverage_hours:coverage?Number(((Date.now()/1000-coverage)/3600).toFixed(1)):null,cursors:await q('SELECT k,head,oldest,updated FROM onchain_cursor ORDER BY k')};
 }
 
+// Pairs stored before the factory was recorded have it read from the pair itself, a few per pass, so their
+// venue can be named. A pair that refuses the call is marked, so it is not asked again every pass.
+const pairFactory=parseAbi(['function factory() view returns (address)']);
+export async function readPoolFactories(limit=25){
+ await init();
+ const rows=await q("SELECT pool FROM onchain_pools WHERE version='v2' AND factory IS NULL LIMIT $1",[limit]);
+ let read=0;
+ for(const {pool} of rows){
+  let factory=null;
+  try{factory=String(await rpc().readContract({address:pool,abi:pairFactory,functionName:'factory'})).toLowerCase();}
+  catch(e){if(/revert/i.test(e?.shortMessage||e?.message||''))factory='unknown';}
+  if(factory==null)continue;
+  await q('UPDATE onchain_pools SET factory=$2 WHERE pool=$1',[pool,factory]);read++;
+ }
+ return read;
+}
+
 // One cycle: follow the chain forward, reach one window further back, describe new tokens, decode trades.
 export async function onchainSync({back=true}={}){
  await init();
  const head=Number(await rpc().getBlockNumber());
  const pools=await discoverPools({head,back});
+ await readPoolFactories().catch(()=>0);
  const described=await readTokenMeta();
  const trades=await collectTrades({head,back});
  return {head,pools:pools.length,described:described.length,trades:trades.length};

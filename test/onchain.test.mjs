@@ -2,7 +2,16 @@
 // could quietly go wrong: which pools count, how a swap is read, and when a total may call itself a day.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decodeSwap,poolFromLog,priceAt} from '../src/onchain.js';
+import {decodeSwap,poolFromLog,priceAt,venueOf} from '../src/onchain.js';
+test('a pair records its factory, and only a known factory names the exchange',()=>{
+ const token='0x'+'b'.repeat(40),dyor='0x942bd5bfdc5317c5507e326f8eb4bb6058ab5c10';
+ const pair={address:'0x942BD5BFDC5317C5507E326F8EB4BB6058AB5C10',args:{token0:token,token1:'0x3600000000000000000000000000000000000000',pair:'0x'+'a'.repeat(40),length:1n},blockNumber:5n,blockTimestamp:'0x64000000'};
+ assert.equal(poolFromLog(pair).factory,dyor,'stored lower case, as every other address is');
+ assert.equal(venueOf('v2',dyor),'dyorswap-v2');
+ assert.equal(venueOf('v2','0x'+'9'.repeat(40)),null,'an unknown v2 factory is not credited to any exchange');
+ assert.equal(venueOf('v2',null),null);assert.equal(venueOf('v2','unknown'),null);
+ assert.equal(venueOf('v3',null),'uniswap-v3');assert.equal(venueOf('v4','anything'),'uniswap-v4');
+});
 import {USDC} from '../src/config.js';
 
 const pool={pool:'0x'+'a'.repeat(40),token:'0x'+'b'.repeat(40),token_is_token0:true,version:'v3'};

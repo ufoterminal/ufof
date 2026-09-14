@@ -1,5 +1,5 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
-import {updateSeries,reconcileTrades,burnText,burnParts} from './live-ui.js';
+import {updateSeries,reconcileTrades,burnText,burnParts,syncNotice} from './live-ui.js';
 import {esc,valid,price,compactPrice,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
@@ -84,7 +84,7 @@ function paintList(){
  $('pulse').innerHTML=d.trending.slice(0,5).map(t=>'<a class="pulse-row" href="/token/'+esc(t.address)+'">'+icon(t)+'<div><b>'+esc(t.symbol)+'</b><small>'+usd(t.volume)+' volume</small></div><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span></a>').join('');
  // Source health and the archive prompt are no longer shown in the panel. The data behind them is still
  // served at /api/status, and the archive is still reachable through search and the mode filter.
- $('list-banner').textContent=d.status?.lastError?'Some sources are unavailable. Their last received data is retained.':d.status?.syncing&&!d.rows.length?'Connecting to source feeds…':'';
+ $('list-banner').textContent=syncNotice(d.status,d.generatedAt,d.rows.length>0);
 }
 async function search(){
  const query=$('global-search').value.trim(),seq=++searchSeq;searchController?.abort();

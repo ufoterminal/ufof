@@ -16,6 +16,14 @@ export function burnText(market,count){
  const {amount,share,unknown}=burnParts(market,count);
  return amount&&share?amount+' · '+share:amount||share||unknown;
 }
+// A feed that fails one round keeps its last data and the chain keeps pricing its tokens, so that alone is
+// not worth a warning: with eleven upstream feeds one of them failed most rounds and the notice never went
+// away. Only a list that has actually stopped refreshing is flagged.
+export function syncNotice(status,generatedAt,hasRows){
+ if(status?.lastSync)return generatedAt-status.lastSync>300?'Market data has not refreshed for a few minutes. Showing the last received data.':'';
+ if(status?.syncing)return hasRows?'':'Connecting to source feeds…';
+ return status?.lastError?'Market data could not be refreshed. Retrying automatically.':'';
+}
 export function updateSeries(series,rows,reset=false){
  const old=history.get(series);
  let appendOnly=!reset&&old&&rows.length>=old.length&&old.length>0;
