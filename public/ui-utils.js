@@ -2,6 +2,15 @@ import {SOURCES} from './sources.js';
 export const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const valid=n=>n!==null&&n!==undefined&&n!==''&&Number.isFinite(Number(n));
 export const price=n=>!valid(n)?'—':'$'+Number(n).toLocaleString('en-US',{maximumSignificantDigits:6});
+// Axis labels only: suppress floating-point residue at zero, not real tiny prices.
+export function chartPrice(value,minMove=0){
+ if(!valid(value))return '—';
+ let n=Number(value);
+ if(minMove>0&&Math.abs(n)<minMove/2)n=0;
+ if(n===0)return '$0';
+ if(Math.abs(n)<1e-6)return '$'+n.toExponential(3).replace(/\.?0+e/,'e');
+ return Math.abs(n)>=1e9?'$'+n.toLocaleString('en-US',{notation:'compact',maximumSignificantDigits:5}):price(n);
+}
 export const usd=n=>!valid(n)?'—':'$'+Number(n).toLocaleString('en-US',{notation:Math.abs(n)>=10000?'compact':'standard',maximumFractionDigits:2});
 export const count=n=>!valid(n)?'—':Number(n).toLocaleString('en-US',{notation:Math.abs(n)>=10000?'compact':'standard',maximumFractionDigits:1});
 export const percent=n=>!valid(n)?'—':(n>0?'+':'')+Number(n).toFixed(2)+'%';

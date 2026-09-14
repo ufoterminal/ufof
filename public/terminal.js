@@ -1,6 +1,6 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
 import {updateSeries,reconcileTrades,burnPercent} from './live-ui.js';
-import {esc,valid,price,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
+import {esc,valid,price,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
 const wallet=location.pathname.startsWith('/wallet/')?location.pathname.split('/').pop():null;
@@ -186,9 +186,10 @@ function paintDetail(d){
  const scale=chartScale(t),k=scale.factor,fmt=scale.format;
  document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x.dataset.scale===scaleMode));
  const live=withLivePrice(d.candles,t.price,TIMEFRAME_SECONDS[tf]);
- if(live.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',base=t.price>0?t.price*k:0,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
-  candleSeries.applyOptions({visible:!closing&&!lineOnly,priceFormat:{type:'custom',formatter:fmt,minMove}});
-  lineSeries.applyOptions({visible:closing||lineOnly,color:'#3f6fd8',priceFormat:{type:'custom',formatter:fmt,minMove}});
+ if(live.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',base=(t.price>0?t.price:live.at(-1)?.close??d.closes?.at(-1)?.value??0)*k,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
+  const axisFmt=scale.label==='Price'?value=>chartPrice(value,minMove):fmt;
+  candleSeries.applyOptions({visible:!closing&&!lineOnly,priceFormat:{type:'custom',formatter:axisFmt,minMove}});
+  lineSeries.applyOptions({visible:closing||lineOnly,color:'#3f6fd8',priceFormat:{type:'custom',formatter:axisFmt,minMove}});
   updateSeries(lineSeries,closing?(d.closes||[]).map(c=>({time:c.bucket,value:c.value*k})):(lineOnly?live.map(c=>({time:c.bucket,value:c.close*k})):[]),chartTokenTf!==tf);
   updateSeries(candleSeries,(closing?[]:live).map(c=>({time:c.bucket,open:c.open*k,high:c.high*k,low:c.low*k,close:c.close*k})),chartTokenTf!==tf);
   updateSeries(volumeSeries,(closing?d.closes:d.candles).filter(c=>valid(c.volume)&&c.volume>=0).map(c=>({time:c.bucket,value:c.volume,color:closing?'#36588280':c.close>=c.open?'#23856c65':'#af435665'})),chartTokenTf!==tf);
