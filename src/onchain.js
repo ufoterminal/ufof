@@ -295,6 +295,15 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
    m.volume24h=volume;m.txns24h=tape.length;m.buys24h=tape.filter(t=>t.buy).length;
    m.sells24h=tape.length-m.buys24h;m.last_trade_at=Number(tape[tape.length-1].at);
    if(traders)m.traders24h=traders;
+   // The two sides of the day, kept apart. A day with equal counts can still be one-sided in money, and
+   // the number of distinct buyers against distinct sellers says something neither total does.
+   m.buy_volume24h=tape.filter(t=>t.buy).reduce((a,t)=>a+Number(t.usd_volume||0),0);
+   m.sell_volume24h=volume-m.buy_volume24h;
+   const buyers=new Set(tape.filter(t=>t.buy).map(t=>t.trader).filter(Boolean));
+   const sellers=new Set(tape.filter(t=>!t.buy).map(t=>t.trader).filter(Boolean));
+   if(buyers.size)m.buyers24h=buyers.size;
+   if(sellers.size)m.sellers24h=sellers.size;
+   if(supply>0&&last!=null)m.fdv=last*supply;
    m.changes={'5m':changeFrom(tape,now,300,last),'1h':changeFrom(tape,now,3600,last),
     '6h':changeFrom(tape,now,21600,last),'24h':changeFrom(tape,now,86400,last)};
    m.spark=tape.filter((_,i)=>i%Math.max(1,Math.ceil(tape.length/15))===0).map(t=>Number(t.price)).slice(-15);

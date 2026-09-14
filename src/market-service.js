@@ -18,6 +18,9 @@ export function mapMarket(t){
   transactions:number(m.txns24h),traders:number(m.traders24h),holders:number(m.holders),
   buys:number(m.buys24h),sells:number(m.sells24h),changes:m.changes||{},spark:finiteArray(m.spark),
   createdAt:validTime(m.token_created_at),lastTradeAt:validTime(m.last_trade_at),
+  // The two sides of the day and the fully diluted figure, shown beside the totals.
+  buyVolume:number(m.buy_volume24h),sellVolume:number(m.sell_volume24h),
+  buyers:number(m.buyers24h),sellers:number(m.sellers24h),fdv:number(m.fdv),
   updatedAt:validTime(m.provider_updated_at),logo:m.logo||null,website:m.website||null,
   twitter:m.twitter||null,telegram:m.telegram||null,versions:Array.isArray(m.versions)?m.versions:[],
   venues:[...new Set([...(m.venues||[]),...(m.versions||[]).filter(v=>v==='v3'||v==='v4').map(v=>'uniswap-'+v)])],chartProvider:m.chart_provider||null,pool:m.pool||null,marketData:sources.has(m.source),stale:!(Number(m.provider_updated_at)>Date.now()/1000-180)};

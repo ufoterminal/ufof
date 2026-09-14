@@ -32,7 +32,7 @@ test('only a real chart failure is shown as a warning',()=>{
 });
 
 test('burned supply has a place in the market overview',()=>{
- assert.ok(terminal.includes("'Burned supply'"),'the metric is rendered');
+ assert.ok(terminal.includes("<span>Burned</span>"),'the figure is rendered');
  assert.ok(terminal.includes('t.burnedPercent'),'its share of supply is shown when known');
 });
 
@@ -79,11 +79,9 @@ test('the market row is trimmed to fit a laptop screen without sideways scrollin
  assert.ok(/\.market-table th,\.market-table td\{padding-left:8px/.test(css),'the number columns give up a little padding');
 });
 
-test('retired sources keep their name but are not offered as a filter',async()=>{
- const {SOURCES}=await import('../public/sources.js');
- assert.equal(SOURCES['dyorswap-v2'].retired,true,'the venue we no longer read is kept out of the filter');
- assert.ok(terminal.includes('filter(([,s])=>!s.retired)'),'the dropdown leaves them out');
- assert.ok(!SOURCES.dyor.retired,'DYOR is read from its factory again, so it is offered');
+test('the launchpad tag is gone from every surface',()=>{
+ assert.ok(!terminal.includes('sourceName('),'no row, heading, search result or fact names a pad');
+ assert.ok(!terminal.includes('source-filter'),'and there is no filter to pick one');
 });
 
 test('an address that is not a listed token is offered as a wallet',()=>{
