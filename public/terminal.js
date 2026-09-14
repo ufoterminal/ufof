@@ -1,5 +1,5 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
-import {updateSeries,reconcileTrades,burnText,burnParts,syncNotice} from './live-ui.js';
+import {updateSeries,reconcileTrades,updateMarketRows,burnText,burnParts,syncNotice} from './live-ui.js';
 import {esc,valid,price,compactPrice,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
@@ -10,21 +10,37 @@ const chartViews=new Set(['candles','line']);
 const chartScales=new Set(['price','mc']);
 let listData=null,listSeq=0,listController,searchSeq=0,searchController,searchTimer,detailSeq=0,detailController,tf=timeframes.has(params.get('tf'))?params.get('tf'):'1h',viewMode=chartViews.has(params.get('view'))?params.get('view'):'candles',scaleMode=chartScales.has(params.get('scale'))?params.get('scale'):'price',currentDetail=null;
 let liveData=null,liveTimer,liveController,liveBusy=false,liveFailures=0,liveAt=0;
+let eventStream=null,streamHealthy=false,listNoticeTimer;
+function acceptLive(d){
+ if(!d?.market)return;
+ liveData=d;liveAt=Date.now();liveFailures=0;
+ if(currentDetail){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
+}
+function connectEvents(){
+ if(wallet||document.hidden||eventStream||!window.EventSource)return;
+ const stream=eventStream=new EventSource('/api/events'+(address?'?token='+encodeURIComponent(address):''));
+ stream.addEventListener('ready',()=>{streamHealthy=true;clearTimeout(liveTimer);});
+ stream.addEventListener('live',e=>{try{acceptLive(JSON.parse(e.data));}catch{}});
+ stream.addEventListener('markets',()=>{if(!address){clearTimeout(listNoticeTimer);listNoticeTimer=setTimeout(()=>loadList(),250);}});
+ stream.addEventListener('chart',e=>{try{if(address&&JSON.parse(e.data).tf===tf&&!detailBusy)loadDetail({background:true});}catch{}});
+ stream.addEventListener('feed-error',()=>{if(address&&!liveBusy)loadLive(true);});
+ stream.onerror=()=>{streamHealthy=false;if(address&&!liveBusy){clearTimeout(liveTimer);liveTimer=setTimeout(()=>loadLive(),1500);}};
+}
+function disconnectEvents(){eventStream?.close();eventStream=null;streamHealthy=false;clearTimeout(listNoticeTimer);}
 function mergeLive(d){
  if(!liveData||Date.now()-liveAt>20000)return d;
  const fields=Object.fromEntries(Object.entries(liveData.market||{}).filter(([,v])=>v!=null));
  const trades=liveData.trades?.length?liveData.trades:d.trades;
  return {...d,market:{...d.market,...fields},trades};
 }
-async function loadLive(){
- if(liveBusy||document.hidden||!address)return;
+async function loadLive(force=false){
+ if(liveBusy||document.hidden||!address||(streamHealthy&&!force))return;
  liveBusy=true;liveController=new AbortController();
  try{
   const d=await api('/api/live/'+encodeURIComponent(address),liveController);
-  liveData=d;liveAt=Date.now();liveFailures=0;
-  if(currentDetail){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
+  if(!streamHealthy||force)acceptLive(d);
  }catch(e){if(e.name!=='AbortError')liveFailures++;}
- finally{liveBusy=false;if(!document.hidden)liveTimer=setTimeout(loadLive,Math.min(15000,1500*2**Math.min(liveFailures,4)));}
+ finally{liveBusy=false;if(!document.hidden&&!streamHealthy)liveTimer=setTimeout(loadLive,Math.min(15000,1500*2**Math.min(liveFailures,4)));}
 }
 let state={mode:params.get('mode')==='watch'?'watch':'active',page:1,sort:'volume',dir:'desc',source:'',version:'',venue:'',minLiquidity:'',minVolume:''};
 const api=async(path,controller)=>{const r=await fetch(path,{signal:controller?AbortSignal.any([controller.signal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000)});const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed ('+r.status+')');return j;};
@@ -75,7 +91,7 @@ function paintList(){
  const d=listData;
  for(const [id,format] of [['active',count],['volume',usd],['liquidity',usd],['transactions',count]])$('stat-'+id).textContent=format(d.stats[id]);
  document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===state.mode));
- $('market-rows').innerHTML=d.rows.map(t=>'<tr data-token="'+esc(t.address)+'"><td>'+star(t.address)+'</td><td><a class="token-cell" href="/token/'+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><span class="description">'+esc(t.name||short(t.address))+'</span></span></a></td><td>'+spark(t.spark,t.changes['24h'])+'</td><td>'+usd(t.marketCap)+'</td><td>'+price(t.price)+'</td><td title="'+esc(date(t.createdAt))+'">'+age(t.createdAt)+'</td><td>'+usd(t.volume)+'</td><td>'+count(t.transactions)+'</td><td>'+count(t.traders)+'</td><td>'+count(t.holders)+'</td>'+['5m','1h','6h','24h'].map(w=>'<td class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</td>').join('')+'<td>'+usd(t.liquidity)+'</td></tr>').join('')||'<tr><td colspan="15" class="empty">'+(state.mode==='watch'?'Your watchlist is empty. Tap ☆ beside any token.':'No markets match these filters.')+'</td></tr>';
+ updateMarketRows($('market-rows'),d.rows.map(t=>'<tr data-token="'+esc(t.address)+'"><td>'+star(t.address)+'</td><td><a class="token-cell" href="/token/'+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><span class="description">'+esc(t.name||short(t.address))+'</span></span></a></td><td>'+spark(t.spark,t.changes['24h'])+'</td><td>'+usd(t.marketCap)+'</td><td>'+price(t.price)+'</td><td title="'+esc(date(t.createdAt))+'">'+age(t.createdAt)+'</td><td>'+usd(t.volume)+'</td><td>'+count(t.transactions)+'</td><td>'+count(t.traders)+'</td><td>'+count(t.holders)+'</td>'+['5m','1h','6h','24h'].map(w=>'<td class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</td>').join('')+'<td>'+usd(t.liquidity)+'</td></tr>').join('')||'<tr><td colspan="15" class="empty">'+(state.mode==='watch'?'Your watchlist is empty. Tap ☆ beside any token.':'No markets match these filters.')+'</td></tr>');
  $('result-count').textContent=count(d.total)+' tokens'+(valid(d.held)&&d.held>d.total?' of '+count(d.held)+' indexed \u00b7 search reaches the rest':'')+' \u00b7 source coverage totals';
  paintPadBadges($('market-rows'),d.rows);
  $('page-label').textContent=d.page+' / '+d.pages;$('page-prev').disabled=d.page<=1;$('page-next').disabled=d.page>=d.pages;
@@ -406,6 +422,7 @@ if(wallet){walletShell();loadWallet();}
 else if(address){detailShell();loadDetail();loadLive();
  app.addEventListener('click',e=>{const b=e.target.closest('[data-panel]');if(b)showPanel(b.dataset.panel);});
 }else{listShell();loadList();}
+connectEvents();
 // An open token page is refreshed more often than the market list: it is the page someone watches trade
 // by trade, and a quarter of a minute between updates reads as the site being behind.
 setInterval(()=>{if(!document.hidden&&!address&&!wallet)loadList();},10000);
@@ -414,10 +431,11 @@ document.addEventListener('visibilitychange',()=>{
  clearTimeout(detailTimer);
  clearTimeout(liveTimer);
  clearTimeout(walletTimer);
- if(document.hidden){detailController?.abort();liveController?.abort();return;}
+ if(document.hidden){disconnectEvents();detailController?.abort();liveController?.abort();return;}
+ connectEvents();
  // Coming back to the tab picks the refresh up where it was due, rather than refetching what was just read.
  if(address){loadDetail();loadLive();}
  else if(wallet)walletTimer=setTimeout(loadWallet,Math.max(0,walletDelay()-(Date.now()-walletAt)));
  else loadList();
 });
-window.addEventListener('pagehide',()=>{clearTimeout(detailTimer);clearTimeout(liveTimer);detailController?.abort();liveController?.abort();});
+window.addEventListener('pagehide',()=>{disconnectEvents();clearTimeout(detailTimer);clearTimeout(liveTimer);detailController?.abort();liveController?.abort();});

@@ -1,5 +1,24 @@
 // Keep history and DOM nodes intact while live data changes at the head.
 const history=new WeakMap();
+export function updateMarketRows(body,html){
+ const template=body.ownerDocument.createElement('tbody');template.innerHTML=html;
+ const old=new Map([...body.children].filter(n=>n.dataset.token).map(n=>[n.dataset.token,n]));
+ const keep=new Set();let index=0;
+ for(const fresh of [...template.children]){
+  const node=old.get(fresh.dataset.token)||fresh;keep.add(node);
+  if(node!==fresh){
+   for(let i=0;i<fresh.cells.length;i++){
+    const a=node.cells[i],b=fresh.cells[i];
+    // Launchpad badges are decorated after row updates.
+    a?.querySelectorAll('.launchpad-tag').forEach(n=>n.remove());
+    if(a&&a.innerHTML!==b.innerHTML)a.innerHTML=b.innerHTML;
+    if(a)a.className=b.className;
+   }
+  }
+  if(body.children[index]!==node)body.insertBefore(node,body.children[index]||null);index++;
+ }
+ for(const n of [...body.children])if(!keep.has(n))n.remove();
+}
 export function burnPercent(value){
  if(value==null||!Number.isFinite(Number(value))||Number(value)<0||Number(value)>100)return '—';
  const n=Number(value);

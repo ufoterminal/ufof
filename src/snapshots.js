@@ -1,4 +1,5 @@
 import {q} from './db.js';
+import {marketEvents} from './market-events.js';
 export const frames=['1m','5m','15m','1h','4h','1d'];
 let ready;
 export const initSnapshots=()=>ready??=q(`CREATE TABLE IF NOT EXISTS market_snapshots_v3(
@@ -21,6 +22,7 @@ export async function publishSnapshot(token,tf,payload){
  if(!payload?.candles?.length)throw Error(payload?.errors?.detail||payload?.errors?.chart||'No validated candles available');
  await q(`INSERT INTO market_snapshots_v3(token,tf,payload,updated) VALUES($1,$2,$3::jsonb,$4)
  ON CONFLICT(token,tf) DO UPDATE SET payload=excluded.payload,updated=excluded.updated`,[token,tf,JSON.stringify(payload),Date.now()]);
+ marketEvents.emit('changed',{token,tf});
 }
 export async function claimJob(){
  await initSnapshots();const now=Date.now();

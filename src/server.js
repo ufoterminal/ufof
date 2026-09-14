@@ -14,8 +14,12 @@ import {metadataStatus} from './token-metadata.js';
 import {retentionStatus} from './retention.js';
 import {walletHoldings} from './wallet.js';
 import {liveMarket} from './live-market.js';
+import {marketEvents} from './market-events.js';
+import {createEventStream} from './event-stream.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
+const stream=createEventStream(liveMarket,marketEvents);
+app.get('/api/events',stream.handler);
 let status={syncing:false,lastSync:null,lastError:null,sources:[]};
 const route=fn=>async(req,res)=>{try{await fn(req,res);}catch(e){console.error('[http]',e.message);res.status(500).json({error:e.message});}};
 app.get('/health',(_,res)=>res.json({ok:true,storage,...status}));
@@ -85,4 +89,4 @@ let stopped=false;
 const SYNC_INTERVAL=Math.max(10000,Number(process.env.SYNC_INTERVAL_MS||25000));
 async function loop(){await sync();if(!stopped)setTimeout(loop,SYNC_INTERVAL).unref();}
 loop();
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{stopped=true;stopWorker();server.close();await pool.end();process.exit(0);});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{stopped=true;stream.close();stopWorker();server.close();await pool.end();process.exit(0);});

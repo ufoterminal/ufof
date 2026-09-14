@@ -7,6 +7,8 @@ import {requestSnapshot,readSnapshot,publishSnapshot,initSnapshots} from './snap
 import {readBurned,recentTrades} from './onchain.js';
 import {launchMeta} from './argus.js';
 import {crossQuote,nonUsdQuote} from './quote-values.js';
+import {marketEvents} from './market-events.js';
+marketEvents.on('changed',()=>invalidateMarkets());
 let snapshot=null,until=0,inflight=null;
 // Slow supply RPCs must not hold up a fresh transaction/chart snapshot.
 const burnValues=new Map(),burnFlights=new Set();
