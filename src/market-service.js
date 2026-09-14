@@ -11,6 +11,9 @@ let snapshot=null,until=0,inflight=null;
 // Slow supply RPCs must not hold up a fresh transaction/chart snapshot.
 const burnValues=new Map(),burnFlights=new Set();
 const warmed=new Map();
+// A reading counts once the burned amount is known. Tying it to the dead-address share alone threw away
+// readings whose total supply the RPC refused, which is the same refusal that leaves the panel empty.
+const usableBurn=v=>Number.isFinite(v?.burned)||Number.isFinite(v?.deadPercent);
 function cachedBurn(row){
  const key=row.address,stored=row.metadata?.burn_reading;
  const hit=burnValues.get(key)||(stored?.value?{value:stored.value,until:Number(stored.at)+60000}:null);
@@ -18,8 +21,8 @@ function cachedBurn(row){
   burnFlights.add(key);
   readBurned(key,row.decimals,row.total_supply).then(async value=>{
    if(burnValues.size>=1000)burnValues.delete(burnValues.keys().next().value);
-   burnValues.set(key,{value:Number.isFinite(value?.deadPercent)?value:hit?.value||null,until:Date.now()+60000});
-   if(value?.deadPercent!=null)await q('UPDATE tokens SET metadata=metadata||$2::jsonb WHERE address=$1',
+   burnValues.set(key,{value:usableBurn(value)?value:hit?.value||null,until:Date.now()+60000});
+   if(usableBurn(value))await q('UPDATE tokens SET metadata=metadata||$2::jsonb WHERE address=$1',
     [key,JSON.stringify({burn_reading:{value,at:Date.now()}})]).catch(()=>null);
   }).catch(()=>burnValues.set(key,{value:hit?.value||null,until:Date.now()+30000})).finally(()=>burnFlights.delete(key));
  }
@@ -27,7 +30,8 @@ function cachedBurn(row){
 }
 export function burnFields(row){
  const burn=cachedBurn(row);
- return {deadBurnedPercent:burn?.deadPercent??null,burnLoading:burn?.deadPercent==null&&burnFlights.has(row.address)};
+ return {deadBurnedPercent:burn?.deadPercent??null,burnLoading:!usableBurn(burn)&&burnFlights.has(row.address),
+  burned:burn&&burn.burned>=1?burn.burned:null,burnedPercent:burn&&burn.burned>=1?burn.percent:null};
 }
 const sources=new Set(Object.keys(SOURCES));
 const validTime=v=>{const n=number(v);return n>0&&n<=Date.now()/1000+60?n:null;};
@@ -255,6 +259,8 @@ export async function getMarket(address,tf='1h'){
    cache:{updatedAt:saved.updated,stale:age>60000}};
  }
  refreshDetail(address,tf);
- return {market:mapMarket(row),timeframe:tf,candles:[],closes:[],trades:[],chartMode:'candles',supported:true,
+ // The burn is read from the token, not from the snapshot being prepared, so the first paint carries it
+ // rather than leaving the panel empty until the build lands.
+ return {market:{...mapMarket(row),...burnFields(row)},timeframe:tf,candles:[],closes:[],trades:[],chartMode:'candles',supported:true,
  history:{loading:true,complete:false},errors:{chartNotice:'Historical data is being prepared in the background.'},cache:{pending:true}};
 }

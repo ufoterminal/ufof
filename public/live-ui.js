@@ -5,6 +5,17 @@ export function burnPercent(value){
  const n=Number(value);
  return n>0&&n<0.01?'%<0,01':'%'+n.toLocaleString('tr-TR',{maximumFractionDigits:2});
 }
+// The burn reads as how much supply is gone and what share of it that is. Either half alone is still
+// worth showing: an amount without a supply to measure it against, or a share whose amount is dust.
+export function burnParts(market,count){
+ const amount=Number.isFinite(Number(market.burned))&&Number(market.burned)>0?count(market.burned):null;
+ const share=burnPercent(market.burnedPercent??market.deadBurnedPercent);
+ return {amount,share:share==='—'?null:share,unknown:market.burnLoading?'Reading…':'—'};
+}
+export function burnText(market,count){
+ const {amount,share,unknown}=burnParts(market,count);
+ return amount&&share?amount+' · '+share:amount||share||unknown;
+}
 export function updateSeries(series,rows,reset=false){
  const old=history.get(series);
  let appendOnly=!reset&&old&&rows.length>=old.length&&old.length>0;

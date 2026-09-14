@@ -1,5 +1,5 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
-import {updateSeries,reconcileTrades,burnPercent} from './live-ui.js';
+import {updateSeries,reconcileTrades,burnText,burnParts} from './live-ui.js';
 import {esc,valid,price,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
@@ -158,17 +158,19 @@ function paintDetail(d){
   +'<div class="pair-values"><b>'+a.total+'</b><span class="up">'+a.buy+'</span><span class="down">'+a.sell+'</span></div>'
   +(valid(ratio)?'<div class="ratio"><span style="width:'+ratio+'%"></span></div>':'')+'</div>';
  const share=(x,y)=>valid(x)&&valid(y)&&(x+y)>0?x/(x+y)*100:null;
+ const burn=burnParts(t,count);
  $('detail-metrics').innerHTML='<h2 class="details-title">Market overview</h2>'
   +'<div class="metrics two">'+[['Price USD',price(t.price)],['FDV',usd(t.fdv??t.marketCap)]]
     .map(([l,v])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b></div>').join('')+'</div>'
-  +'<div class="metrics three">'+[['Liquidity',usd(t.liquidity)],['Burned',valid(t.deadBurnedPercent)?burnPercent(t.deadBurnedPercent):(t.burnLoading?'Reading…':'\u2014')],['Mkt cap',usd(t.marketCap)]]
-    .map(([l,v])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b></div>').join('')+'</div>'
+  // The card is too narrow for both figures on one line, so the share sits under the amount.
+  +'<div class="metrics three">'+[['Liquidity',usd(t.liquidity)],['Burned',burn.amount||burn.share||burn.unknown,burn.amount?burn.share:null],['Mkt cap',usd(t.marketCap)]]
+    .map(([l,v,sub])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b>'+(sub?'<i>'+sub+'</i>':'')+'</div>').join('')+'</div>'
   +'<div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'
   +pair('Txns',{total:count(t.transactions),buy:count(t.buys),sell:count(t.sells)},null,'Buys','Sells',share(t.buys,t.sells))
   +'<div class="pair"><div class="pair-head"><small>Volume · 24h</small></div><div class="pair-values"><b>'+usd(t.volume)+'</b></div></div>'
   +'<div class="pair"><div class="pair-head"><small>Traders · 24h</small></div><div class="pair-values"><b>'+count(t.traders)+'</b></div></div>'
   +'<div class="facts"><div><span>Holders</span><span>'+count(t.holders)+'</span></div>'
-   +'<div title="Dead address balance / current total supply"><span>Burned</span><span>'+burnPercent(t.deadBurnedPercent)+'</span></div>'
+   +'<div title="Supply held at the burn addresses, and its share of total supply"><span>Burned</span><span>'+burnText(t,count)+'</span></div>'
    +'<div><span>Created</span><span title="'+esc(date(t.createdAt))+'">'+since(t.createdAt)+'</span></div>'
    +'<div><span>Last trade</span><span>'+since(t.lastTradeAt)+'</span></div>'
    +'<div><span>Pool</span><span>'+esc(short(t.pool))+'</span></div>'

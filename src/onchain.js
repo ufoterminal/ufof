@@ -333,22 +333,32 @@ export async function onchainMarkets(now=Math.floor(Date.now()/1000)){
 // by sending them where nobody holds the key: the dead address, and sometimes the zero address. Both are
 // counted, and the total supply is read at the same time so the share is consistent with it.
 const BURN_ADDRESSES=['0x000000000000000000000000000000000000dead','0x0000000000000000000000000000000000000000'];
+const rawSupply=v=>{const s=String(v??'').trim().split('.')[0];return /^\d+$/.test(s)?BigInt(s):null;};
 export async function readBurned(token,decimals,supplyRaw){
  const address=String(token||'').toLowerCase();
  if(!/^0x[0-9a-f]{40}$/.test(address))return null;
  const blockNumber=await rpc().getBlockNumber();
- const read=fn=>rpc().readContract({address,abi:erc20,functionName:fn,blockNumber});
- const [supply,...balances]=await Promise.all([
-  read('totalSupply').catch(()=>null),
-  ...BURN_ADDRESSES.map(dead=>rpc().readContract({address,abi:erc20,functionName:'balanceOf',args:[dead],blockNumber}).catch(()=>null))
- ]);
- if(balances.every(b=>b==null))return null;
- const burnedRaw=balances.reduce((a,b)=>a+(b??0n),0n);
+ // Arc's public endpoints refuse part of a parallel burst, and one refused call used to discard the whole
+ // reading, so tokens that do have a burn showed nothing at all. The calls go one at a time and each is
+ // retried once, and a refused supply falls back to the one already read from the token.
+ const read=async(fn,args)=>{
+  for(let attempt=0;attempt<2;attempt++){
+   try{return await rpc().readContract({address,abi:erc20,functionName:fn,args,blockNumber});}
+   catch{if(attempt)return null;await new Promise(r=>setTimeout(r,300));}
+  }
+  return null;
+ };
+ // The dead address is the burn. Without it there is no reading; the zero address is added when it answers.
+ const dead=await read('balanceOf',[BURN_ADDRESSES[0]]);
+ if(dead==null)return null;
+ const zero=await read('balanceOf',[BURN_ADDRESSES[1]]);
+ const supply=await read('totalSupply')??rawSupply(supplyRaw);
+ const burnedRaw=dead+(zero??0n);
  const scale=10**Number(decimals??18);
  const burned=Number(burnedRaw)/scale;
  const total=supply==null?null:Number(supply)/scale;
  return {burned,total,percent:total>0?burned/total*100:null,
-  deadPercent:supply>0n&&balances[0]!=null?Number(balances[0]*10000000000n/supply)/100000000:null,
+  deadPercent:supply>0n?Number(dead*10000000000n/supply)/100000000:null,
   circulating:total==null?null:Math.max(0,total-burned)};
 }
 

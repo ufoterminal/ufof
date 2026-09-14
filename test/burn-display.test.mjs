@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {burnPercent} from '../public/live-ui.js';
+import {burnPercent,burnText} from '../public/live-ui.js';
 import {burnFields} from '../src/market-service.js';
 test('persisted dead-address readings are available without waiting for a chart or RPC',()=>{
  for(const value of [0,4.2]){
@@ -13,6 +13,14 @@ test('burn percentages include real zero, preserve unknown and format compactly'
  assert.equal(burnPercent(4),'%4');assert.equal(burnPercent(0),'%0');
  assert.equal(burnPercent(4.126),'%4,13');assert.equal(burnPercent(null),'—');
  assert.equal(burnPercent(0.001),'%<0,01');assert.equal(burnPercent(Infinity),'—');
+});
+test('the burn reads as the amount taken out of supply and its share',()=>{
+ const count=n=>Number(n).toLocaleString('en-US',{notation:Math.abs(n)>=10000?'compact':'standard',maximumFractionDigits:1});
+ assert.equal(burnText({burned:2500000,burnedPercent:25,deadBurnedPercent:25},count),'2.5M · %25');
+ assert.equal(burnText({burned:2500000,burnedPercent:null,deadBurnedPercent:null},count),'2.5M');
+ assert.equal(burnText({burned:null,deadBurnedPercent:4.2},count),'%4,2');
+ assert.equal(burnText({burned:null,deadBurnedPercent:null,burnLoading:true},count),'Reading…');
+ assert.equal(burnText({burned:null,deadBurnedPercent:null},count),'—');
 });
 test('recent volume and trader splits are no longer rendered',()=>{
  const text=readFileSync(new URL('../public/terminal.js',import.meta.url),'utf8');
