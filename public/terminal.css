@@ -88,3 +88,6 @@
 .pair-values{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:baseline;margin-top:4px;font-size:13px}
 .pair-values b{font-size:15px}
 .pair .ratio{margin-top:8px}
+.trade-arrival{animation:trade-arrival .75s ease-out}
+@keyframes trade-arrival{from{background:rgba(32,184,146,.18)}to{background:transparent}}
+@media(prefers-reduced-motion:reduce){.trade-arrival{animation:none}}

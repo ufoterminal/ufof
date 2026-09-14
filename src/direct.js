@@ -356,11 +356,11 @@ export function normalizeChart(rows,seconds){
  }
  return {candles:[...candles.values()].slice(-500),closes:[...closes.values()].slice(-500),chartMode:invalid?'close':'candles'};
 }
-export async function directDetail(source,address,tf='1h'){
+export async function directDetail(source,address,tf='1h',liveOnly=false){
  const seconds={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400}[tf];
  if(!seconds)throw Error('Unsupported timeframe');
  const errors={};let detail=null,chart=[],swaps=[];
- const read=async(key,url)=>{try{return await cachedJson(url)}catch(e){errors[key]=e.message;return null;}};
+ const read=async(key,url)=>{if(liveOnly&&['chart','volume','poolDiscovery'].includes(key))return null;try{return await cachedJson(url,key==='trades'?3000:key==='detail'?5000:10000)}catch(e){errors[key]=e.message;return null;}};
  if(['radardex','noxa','argus','long','o1','indexed-market','uniswap','dyorswap-v2'].includes(source)){
   const base='https://api.radardex.pro/token/'+address;
   const results=await Promise.all([read('detail',base),read('chart',base+'/chart?tf='+seconds+'&limit=500'),read('trades',base+'/swaps?limit=60')]);
@@ -380,7 +380,11 @@ export async function directDetail(source,address,tf='1h'){
   const base='https://arc-api-production-ef9c.up.railway.app/api/arc/v1/tokens/'+address;
   const results=await Promise.all([read('detail',base),read('trades',base+'/trades?limit=100')]);
  detail=results[0];
- swaps=(results[1]?.items||[]).map(s=>{const usdc=scaled(s.amount_eth,6),tokens=scaled(s.amount_token,18);return {at:Number(s.created_at)>1e12?Math.floor(Number(s.created_at)/1000):Number(s.created_at),buy:String(s.side).toUpperCase()==='BUY',usd_volume:usdc,price:usdc!=null&&tokens>0?usdc/tokens:null,trader:s.trader,tx:s.tx_hash};});
+ if(detail?.chainId!=null&&Number(detail.chainId)!==5042)throw Error('Wrong chain');
+ if(detail?.token&&detail.token.toLowerCase()!==address.toLowerCase())throw Error('Token address mismatch');
+ const quoteOk=!detail?.pairToken||detail.pairToken.toLowerCase()==='0x3600000000000000000000000000000000000000';
+ swaps=(results[1]?.items||[]).map(s=>{const usdc=quoteOk?scaled(s.amount_eth,number(detail?.pairDecimals)??6):null,tokens=scaled(s.amount_token,18);return {id:s.id,at:Number(s.created_at)>1e12?Math.floor(Number(s.created_at)/1000):Number(s.created_at),buy:String(s.side).toUpperCase()==='BUY',usd_volume:usdc,price:usdc!=null&&tokens>0?usdc/tokens:null,trader:s.trader,tx:s.tx_hash};});
+ if(detail&&quoteOk){const latest=swaps.filter(s=>s.price>0).sort((a,b)=>b.at-a.at)[0];detail={...detail,price:latest?.price??null,priceAt:latest?.at??null,mcap:scaled(detail.marketCapEth,number(detail.pairDecimals)??6),liquidityUsd:scaled(detail.liquidityEth,number(detail.pairDecimals)??6)};}
   chart=candlesFromTrades(swaps,seconds);
  }else if(source==='sharc'){
   const base='https://sharc.fun/api/tokens/'+address;

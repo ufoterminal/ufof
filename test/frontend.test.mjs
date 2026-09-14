@@ -105,12 +105,11 @@ test('search results are ranked by what a token is worth, not its unit price',()
 test('the open candle carries the price the header shows',()=>{
  assert.ok(terminal.includes('function withLivePrice('),'the helper exists');
  assert.ok(terminal.includes('withLivePrice(d.candles,t.price,TIMEFRAME_SECONDS[tf])'),'it is applied per timeframe');
- assert.ok(terminal.includes('candleSeries.setData((closing?[]:live)'),'the chart draws the adjusted series');
+ assert.ok(terminal.includes('updateSeries(candleSeries,(closing?[]:live)'),'the chart incrementally draws the adjusted series');
 });
 
 test('chart colours are deep enough for the axis label to read white',()=>{
  assert.ok(terminal.includes("upColor:'#17a97f'")&&terminal.includes("downColor:'#e03b53'"),'candles use the deeper pair');
  assert.ok(!terminal.includes("upColor:'#39dbaa'"),'the bright pair that produced dark label text is gone');
 });
-
 

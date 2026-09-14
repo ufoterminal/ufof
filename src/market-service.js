@@ -8,6 +8,20 @@ import {readBurned,recentTrades} from './onchain.js';
 import {launchMeta} from './argus.js';
 import {crossQuote,nonUsdQuote} from './quote-values.js';
 let snapshot=null,until=0,inflight=null;
+// Slow supply RPCs must not hold up a fresh transaction/chart snapshot.
+const burnValues=new Map(),burnFlights=new Set();
+const warmed=new Map();
+function cachedBurn(row){
+ const key=row.address,hit=burnValues.get(key);
+ if((!hit||hit.until<Date.now())&&!burnFlights.has(key)&&burnFlights.size<4){
+  burnFlights.add(key);
+  readBurned(key,row.decimals,row.total_supply).then(value=>{
+   if(burnValues.size>=1000)burnValues.delete(burnValues.keys().next().value);
+   burnValues.set(key,{value:value||hit?.value||null,until:Date.now()+60000});
+  }).catch(()=>burnValues.set(key,{value:hit?.value||null,until:Date.now()+30000})).finally(()=>burnFlights.delete(key));
+ }
+ return hit?.value||null;
+}
 const sources=new Set(Object.keys(SOURCES));
 const validTime=v=>{const n=number(v);return n>0&&n<=Date.now()/1000+60?n:null;};
 const finiteArray=a=>Array.isArray(a)?a.map(number).filter(n=>n!=null&&n>=0):[];
@@ -117,6 +131,10 @@ export async function buildMarket(address,tf='1h'){
   market.price=number(d.price??d.priceUsd??d.live?.currentPrice??d.live?.price??d.token_snapshots?.price)??market.price;
   market.marketCap=number(d.mcap??d.marketCapUsd??d.live?.market_cap??d.live?.marketCap??d.token_snapshots?.market_cap)??market.marketCap;
   market.fdv=number(d.fdv)??market.fdv;
+  if(number(d.price)>0&&number(d.mcap)!=null){
+   market.valuationAt=Math.floor(Date.now()/1000);
+   market.fdv=number(d.fdv);
+  }
   market.quoteToken=d.quoteToken||market.quoteToken;
   market.liquidity=number(dt.liquidityUsdc??dt.liquidity??d.liquidityUsd??d.live?.liquidity)??market.liquidity;
   market.buys=number(d.buys24??d.buys24h)??market.buys;market.sells=number(d.sells24??d.sells24h)??market.sells;
@@ -135,7 +153,7 @@ export async function buildMarket(address,tf='1h'){
  // Burned supply is read from the token itself rather than taken from a feed, so it is present whatever
  // source the rest of the row came from. A failed read leaves it unknown instead of implying zero.
  try{
-  const burn=await readBurned(market.address,row.decimals,row.total_supply);
+  const burn=cachedBurn(row);
   market.deadBurnedPercent=burn?.deadPercent??null;
   // Dust left at a burn address is not a burn. Below a whole token it reads as "0 · 0.00%", which says
   // less than showing nothing at all.
@@ -165,8 +183,10 @@ export function withLiveFigures(market,row){
  const merged={...market};
  for(const key of LIVE_FIGURES)if(live[key]!=null)merged[key]=live[key];
  if(row.metadata?.feed_schema===2)for(const key of ['price','marketCap','fdv'])merged[key]=live[key];
+ // Do not overwrite a coherent fresh USD detail packet with an older list round.
+ if(market.valuationAt>(live.updatedAt||0))for(const key of ['price','marketCap','fdv'])merged[key]=market[key];
  // A failed quote conversion must not resurrect a stale, quote-denominated valuation.
- if(live.quotePending)for(const key of ['price','marketCap','fdv'])merged[key]=null;
+ if(live.quotePending&&!(market.valuationAt>(live.updatedAt||0)))for(const key of ['price','marketCap','fdv'])merged[key]=null;
  return merged;
 }
 
@@ -201,10 +221,15 @@ export async function getMarket(address,tf='1h'){
    invalidateMarkets();
   }
  }
+ const warmKey=address+':'+tf;
+ if(!(warmed.get(warmKey)>Date.now())){
+ if(warmed.size>=1000)warmed.delete(warmed.keys().next().value);
+ warmed.set(warmKey,Date.now()+10000);
  await requestSnapshot(address,tf,10);
  // The other timeframes of a token someone is looking at are prepared behind them, at lower priority.
  // Switching is then a read rather than a build, which is what made it feel slow the first time.
  for(const frame of ['1m','5m','15m','1h','4h','1d'])if(frame!==tf)requestSnapshot(address,frame,3).catch(()=>null);
+ }
  const saved=await readSnapshot(address,tf);
  // A snapshot older than a few seconds is rebuilt here rather than served as it stands. It was only ever
  // refreshed by the background worker, so a page could show trades and candles from a minute ago, and each
@@ -220,8 +245,7 @@ export async function getMarket(address,tf='1h'){
   return {...saved.payload,market:withLiveFigures(saved.payload.market,row),
    cache:{updatedAt:saved.updated,stale:age>60000}};
  }
- const first=await buildMarket(address,tf).catch(()=>null);
- if(first)return {...first,market:withLiveFigures(first.market,row),cache:{updatedAt:Date.now(),stale:false}};
- return {market:{...mapMarket(row),price:null},timeframe:tf,candles:[],closes:[],trades:[],chartMode:'candles',supported:true,
+ refreshDetail(address,tf);
+ return {market:mapMarket(row),timeframe:tf,candles:[],closes:[],trades:[],chartMode:'candles',supported:true,
  history:{loading:true,complete:false},errors:{chartNotice:'Historical data is being prepared in the background.'},cache:{pending:true}};
 }

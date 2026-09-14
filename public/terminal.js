@@ -1,4 +1,5 @@
 import {SOURCES,VENUES} from './sources.js';
+import {updateSeries,reconcileTrades} from './live-ui.js';
 import {esc,valid,price,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
 const address=location.pathname.startsWith('/token/')?location.pathname.split('/').pop():null;
@@ -8,6 +9,24 @@ const timeframes=new Set(['1m','5m','15m','1h','4h','1d']);
 const chartViews=new Set(['candles','line']);
 const chartScales=new Set(['price','mc']);
 let listData=null,listSeq=0,listController,searchSeq=0,searchController,searchTimer,detailSeq=0,detailController,tf=timeframes.has(params.get('tf'))?params.get('tf'):'1h',viewMode=chartViews.has(params.get('view'))?params.get('view'):'candles',scaleMode=chartScales.has(params.get('scale'))?params.get('scale'):'price',currentDetail=null;
+let liveData=null,liveTimer,liveController,liveBusy=false,liveFailures=0,liveAt=0;
+function mergeLive(d){
+ if(!liveData||Date.now()-liveAt>20000)return d;
+ const fields=Object.fromEntries(Object.entries(liveData.market||{}).filter(([,v])=>v!=null));
+ const trades=liveData.trades?.length?liveData.trades:d.trades;
+ return {...d,market:{...d.market,...fields},trades};
+}
+async function loadLive(){
+ if(liveBusy||document.hidden||!address)return;
+ liveBusy=true;liveController=new AbortController();
+ try{
+  const d=await api('/api/live/'+encodeURIComponent(address),liveController);
+  liveData=d;liveAt=Date.now();liveFailures=0;
+  if(currentDetail){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
+  if(panel==='trades')$('panel-note').textContent=d.pending?'Connecting to live feed':d.stale?'Source delayed · retaining data':'Live feed · '+(d.lastTradeAt?'last trade '+age(d.lastTradeAt)+' ago':'waiting for trades');
+ }catch(e){if(e.name!=='AbortError'){liveFailures++;if(panel==='trades')$('panel-note').textContent='Reconnecting · retaining trades';}}
+ finally{liveBusy=false;if(!document.hidden)liveTimer=setTimeout(loadLive,Math.min(15000,1500*2**Math.min(liveFailures,4)));}
+}
 let state={mode:params.get('mode')==='watch'?'watch':'active',page:1,sort:'volume',dir:'desc',source:'',version:'',venue:'',minLiquidity:'',minVolume:''};
 const api=async(path,controller)=>{const r=await fetch(path,{signal:controller?AbortSignal.any([controller.signal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000)});const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed ('+r.status+')');return j;};
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;setTimeout(()=>$('toast').hidden=true,2200);}
@@ -107,13 +126,8 @@ function withLivePrice(candles,price,seconds){
  const now=Math.floor(Date.now()/1000);
  const open=seconds?last.bucket+seconds>now:true;
  if(open)return [...candles.slice(0,-1),{...last,close:price,high:Math.max(last.high,price),low:Math.min(last.low,price)}];
- // The last candle has closed and nothing has traded since. The current period is still worth drawing at
- // the price we are showing: without it a minute chart ended at an older price while a day chart ended at
- // the live one, and the same token read differently on every timeframe.
- if(!seconds)return candles;
- const bucket=Math.floor(now/seconds)*seconds;
- if(bucket<=last.bucket)return candles;
- return [...candles,{bucket,open:last.close,high:Math.max(last.close,price),low:Math.min(last.close,price),close:price,volume:0}];
+ // No execution means no new candle: live must not mean invented activity.
+ return candles;
 }
 
 const TIMEFRAME_SECONDS={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
@@ -136,8 +150,9 @@ function paintDetail(d){
     .map(([l,v])=>'<div class="metric"><small>'+l+'</small><b>'+v+'</b></div>').join('')+'</div>'
   +'<div class="change-grid">'+['5m','1h','6h','24h'].map(w=>'<div><small>'+w.toUpperCase()+'</small><span class="'+color(t.changes[w])+'">'+percent(t.changes[w])+'</span></div>').join('')+'</div>'
   +pair('Txns',{total:count(t.transactions),buy:count(t.buys),sell:count(t.sells)},null,'Buys','Sells',share(t.buys,t.sells))
-  +pair('Volume',{total:usd(t.volume),buy:usd(t.buyVolume),sell:usd(t.sellVolume)},null,'Buy vol','Sell vol',share(t.buyVolume,t.sellVolume))
-  +pair('Traders',{total:count(t.traders),buy:count(t.buyers),sell:count(t.sellers)},null,'Buyers','Sellers',share(t.buyers,t.sellers))
+  +pair('Volume · 24h',{total:usd(t.volume),buy:usd(t.buyVolume??t.recentBuyVolume),sell:usd(t.sellVolume??t.recentSellVolume)},null,t.buyVolume==null?'Recent buy vol':'Buy vol · 24h',t.sellVolume==null?'Recent sell vol':'Sell vol · 24h',share(t.buyVolume,t.sellVolume))
+  +pair('Traders · 24h',{total:count(t.traders),buy:count(t.buyers??t.recentBuyers),sell:count(t.sellers??t.recentSellers)},null,t.buyers==null?'Recent buyers':'Buyers · 24h',t.sellers==null?'Recent sellers':'Sellers · 24h',share(t.buyers,t.sellers))
+  +(t.buyVolume==null&&valid(t.recentTradeCount)?'<div class="side-note">Recent breakdown: '+count(t.recentTradeCount)+' received trades within 24h; not a complete 24h total.</div>':'')
   +'<div class="facts"><div><span>Holders</span><span>'+count(t.holders)+'</span></div>'
    +'<div><span>Burned</span><span>'+(valid(t.burned)?count(t.burned)+(valid(t.burnedPercent)?' \u00b7 '+Number(t.burnedPercent).toFixed(2)+'%':''):'\u2014')+'</span></div>'
    +'<div><span>Created</span><span title="'+esc(date(t.createdAt))+'">'+since(t.createdAt)+'</span></div>'
@@ -159,16 +174,16 @@ function paintDetail(d){
  if(live.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',base=t.price>0?t.price*k:0,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
   candleSeries.applyOptions({visible:!closing&&!lineOnly,priceFormat:{type:'custom',formatter:fmt,minMove}});
   lineSeries.applyOptions({visible:closing||lineOnly,color:'#3f6fd8',priceFormat:{type:'custom',formatter:fmt,minMove}});
-  lineSeries.setData(closing?(d.closes||[]).map(c=>({time:c.bucket,value:c.value*k})):(lineOnly?live.map(c=>({time:c.bucket,value:c.close*k})):[]));
-  candleSeries.setData((closing?[]:live).map(c=>({time:c.bucket,open:c.open*k,high:c.high*k,low:c.low*k,close:c.close*k})));
-  volumeSeries.setData((closing?d.closes:d.candles).filter(c=>valid(c.volume)&&c.volume>=0).map(c=>({time:c.bucket,value:c.volume,color:closing?'#36588280':c.close>=c.open?'#23856c65':'#af435665'})));
+  updateSeries(lineSeries,closing?(d.closes||[]).map(c=>({time:c.bucket,value:c.value*k})):(lineOnly?live.map(c=>({time:c.bucket,value:c.close*k})):[]),chartTokenTf!==tf);
+  updateSeries(candleSeries,(closing?[]:live).map(c=>({time:c.bucket,open:c.open*k,high:c.high*k,low:c.low*k,close:c.close*k})),chartTokenTf!==tf);
+  updateSeries(volumeSeries,(closing?d.closes:d.candles).filter(c=>valid(c.volume)&&c.volume>=0).map(c=>({time:c.bucket,value:c.volume,color:closing?'#36588280':c.close>=c.open?'#23856c65':'#af435665'})),chartTokenTf!==tf);
   if(chartTokenTf!==tf){chart.timeScale().fitContent();const bars=closing?d.closes.length:d.candles.length;if(bars>120)chart.timeScale().setVisibleLogicalRange({from:bars-120,to:bars+3});chartTokenTf=tf;}$('chart-empty').style.display='none';
   const last=closing?d.closes.at(-1):live.at(-1);$('chart-legend').textContent=(closing||lineOnly)?scale.label+' '+fmt((last.value??last.close)*k)+(valid(last.volume)?'   Vol '+usd(last.volume):''):'O '+fmt(last.open*k)+'   H '+fmt(last.high*k)+'   L '+fmt(last.low*k)+'   C '+fmt(last.close*k)+(valid(last.volume)?'   Vol '+usd(last.volume):'');
   if(scale.unavailable)$('chart-error').textContent='Market cap needs a supply figure this token has not reported; showing price.';
- }else if(!d.errors?.chart||chartTokenTf!==tf){candleSeries.setData([]);lineSeries.setData([]);volumeSeries.setData([]);$('chart-empty').style.display='grid';$('chart-empty').textContent=d.supported?'No candles available for this timeframe.':'Chart integration is not available for this source yet.';$('chart-legend').textContent='No price history';}}
+ }else if(!d.errors?.chart||chartTokenTf!==tf){updateSeries(candleSeries,[],true);updateSeries(lineSeries,[],true);updateSeries(volumeSeries,[],true);$('chart-empty').style.display='grid';$('chart-empty').textContent=d.supported?'No candles available for this timeframe.':'Chart integration is not available for this source yet.';$('chart-legend').textContent='No price history';}}
  else{$('chart-empty').textContent='Chart library could not load. Refresh to retry.';}
  if(panel==='trades')$('trade-count').textContent=d.trades.length+' trades';
- if(!paintDetail.keepFlow)$('trades').innerHTML=d.trades.map(s=>'<tr><td title="'+esc(date(s.at))+'">'+age(s.at)+' ago</td><td class="'+(s.buy?'up':'down')+'">'+(s.buy?'Buy':'Sell')+'</td><td>'+usd(s.usd_volume)+'</td><td>'+price(s.price)+'</td><td>'+esc(short(s.trader))+'</td><td>'+(/^0x[0-9a-f]{64}$/i.test(s.tx||'')?'<a href="https://arc-scan.org/tx/'+esc(s.tx)+'" target="_blank" rel="noopener">'+esc(short(s.tx))+' ↗</a>':'—')+'</td></tr>').join('')||'<tr><td colspan="6" class="empty">'+(d.errors?.trades?'Could not load recent trades.':'No recent trades returned by this source.')+'</td></tr>';
+ reconcileTrades($('trades'),d.trades,s=>'<td title="'+esc(date(s.at))+'">'+age(s.at)+' ago</td><td class="'+(s.buy?'up':'down')+'">'+(s.buy?'Buy':'Sell')+'</td><td>'+usd(s.usd_volume)+'</td><td>'+price(s.price)+'</td><td>'+esc(short(s.trader))+'</td><td>'+(/^0x[0-9a-f]{64}$/i.test(s.tx||'')?'<a href="https://arc-scan.org/tx/'+esc(s.tx)+'" target="_blank" rel="noopener">'+esc(short(s.tx))+' ↗</a>':'—')+'</td>','<tr><td colspan="6" class="empty">'+(d.errors?.trades?'Could not load recent trades.':'No recent trades returned by this source.')+'</td></tr>');
 }
 // The holders panel is fetched only when it is opened, and only once per token, because the list comes
 // from somebody else's index and does not change by the second.
@@ -305,11 +320,14 @@ async function loadHolders(){
 }
 // keepFlow is set when only the chart's timeframe changed. Transactions and holders belong to the token,
 // not to the timeframe, so they are left running rather than redrawn from the new payload.
-async function loadDetail({keepFlow=false}={}){
- paintDetail.keepFlow=keepFlow;
+let detailBusy=false,detailTimer,detailFailures=0;
+async function loadDetail({background=false}={}){
+ if(background&&detailBusy)return;
+ clearTimeout(detailTimer);detailBusy=true;
  const seq=++detailSeq;detailController?.abort();detailController=new AbortController();
- try{const d=await api('/api/market/'+encodeURIComponent(address)+'?tf='+tf,detailController);if(seq!==detailSeq)return;currentDetail=d;paintDetail(d);}
- catch(e){if(e.name==='AbortError')return;$('chart-error').textContent=e.message;if(!currentDetail){$('chart-empty').textContent='Token data is unavailable.';$('detail-metrics').textContent=e.message;}}
+ try{const d=await api('/api/market/'+encodeURIComponent(address)+'?tf='+tf,detailController);if(seq!==detailSeq)return;currentDetail=mergeLive(d);paintDetail(currentDetail);detailFailures=0;}
+ catch(e){if(e.name==='AbortError'||seq!==detailSeq)return;detailFailures++;$('chart-error').textContent=e.message;if(!currentDetail){$('chart-empty').textContent='Token data is unavailable.';$('detail-metrics').textContent=e.message;}}
+ finally{if(seq===detailSeq){detailBusy=false;if(!document.hidden)detailTimer=setTimeout(()=>loadDetail({background:true}),Math.min(30000,(currentDetail?.cache?.pending?2000:6000)*2**Math.min(detailFailures,3)));}}
 }
 // A wallet page: what the address holds on Arc, valued with the same prices the market list shows.
 // USDC is Arc's gas token, so it appears on every wallet page. The mark is drawn inline rather than
@@ -348,12 +366,17 @@ async function loadWallet(){
 }
 
 if(wallet){walletShell();loadWallet();}
-else if(address){detailShell();loadDetail();
+else if(address){detailShell();loadDetail();loadLive();
  app.addEventListener('click',e=>{const b=e.target.closest('[data-panel]');if(b)showPanel(b.dataset.panel);});
 }else{listShell();loadList();}
 // An open token page is refreshed more often than the market list: it is the page someone watches trade
 // by trade, and a quarter of a minute between updates reads as the site being behind.
-setInterval(()=>{if(!document.hidden&&!address)loadList();},15000);
+setInterval(()=>{if(!document.hidden&&!address&&!wallet)loadList();},10000);
 // A token page is watched trade by trade, so it is refetched at close to the pace new trades appear.
-setInterval(()=>{if(!document.hidden&&address)loadDetail({keepFlow:true});},Number(localStorage.getItem('ufo:detailPoll'))||2500);
-setInterval(()=>{if(!document.hidden&&address&&currentDetail?.cache?.pending)loadDetail();},3000);
+document.addEventListener('visibilitychange',()=>{
+ clearTimeout(detailTimer);
+ clearTimeout(liveTimer);
+ if(document.hidden){detailController?.abort();liveController?.abort();return;}
+ if(address){loadDetail();loadLive();}else if(!wallet)loadList();
+});
+window.addEventListener('pagehide',()=>{clearTimeout(detailTimer);clearTimeout(liveTimer);detailController?.abort();liveController?.abort();});

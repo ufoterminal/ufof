@@ -13,6 +13,7 @@ import {holderMap,requestHolderMap,setHolderMapPaused} from './holder-map.js';
 import {metadataStatus} from './token-metadata.js';
 import {retentionStatus} from './retention.js';
 import {walletHoldings} from './wallet.js';
+import {liveMarket} from './live-market.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
 let status={syncing:false,lastSync:null,lastError:null,sources:[]};
@@ -58,6 +59,11 @@ app.get('/api/market/:address',route(async(req,res)=>{
  if(!['1m','5m','15m','1h','4h','1d'].includes(String(req.query.tf||'1h')))return res.status(400).json({error:'Invalid timeframe'});
  const data=await getMarket(req.params.address,String(req.query.tf||'1h'));
  if(!data)return res.status(404).json({error:'This token is not in the connected sources yet.'});res.json(data);
+}));
+app.get('/api/live/:address',route(async(req,res)=>{
+ if(!/^0x[0-9a-f]{40}$/i.test(req.params.address))return res.status(400).json({error:'Invalid address'});
+ res.set('Cache-Control','no-store');const data=await liveMarket(req.params.address);
+ if(!data)return res.status(404).json({error:'Unknown token'});res.json(data);
 }));
 app.get('/vendor/charts.js',(_,res)=>res.sendFile(path.join(root,'../node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js')));
 app.use(express.static(path.join(root,'../public')));
