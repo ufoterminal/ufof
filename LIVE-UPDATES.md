@@ -1,5 +1,12 @@
 # Live updates
 
+## Shared live reads and same-second candle updates (2026-09-15)
+
+- HTTP fallback and SSE now share the complete per-token live computation, including database reads, with a one-second result cache and bounded concurrent computations. This is process-local; it is not a distributed indexer migration.
+- Locally sourced chart snapshots carry a block/log cursor. Later swaps within the same second are no longer discarded by the live candle overlay. Older snapshots without that cursor remain conservative until refreshed.
+- During timeframe loading, live prices and transaction rows keep rendering, while a snapshot for another timeframe cannot repaint the selected chart.
+- Verification: 155 automated tests and the isolated six-frame browser fixture passed. No production load capacity or universal live-token accuracy is claimed. Public RPC failures, provider history gaps, and cross-quote limitations remain external/coverage risks.
+
 ## Progressive wallet balances (2026-09-15)
 
 - Wallet scans now use page/offset (100 per page), continue across bounded four-page passes, deduplicate contracts, and explicitly report pending/incomplete/error states. The [Etherscan-compatible holding endpoint](https://docs.etherscan.io/api-reference/endpoint/addresstokenbalance) documents these pagination parameters; Arcscan must support and serve them successfully for complete coverage.

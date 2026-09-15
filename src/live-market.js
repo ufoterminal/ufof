@@ -5,6 +5,7 @@ import {recentTrades,bestPool} from './onchain.js';
 import {liveChartHead} from './chart-engine.js';
 import {executionValuation} from './execution-valuation.js';
 import {crossQuote,nonUsdQuote} from './quote-values.js';
+import {sharedLive} from './shared-live.js';
 const cache=new Map(),flights=new Set();
 export function windowStats(trades,now,complete=false){
  if(!complete&&!trades.some(t=>t.at<=now-86400))return null;
@@ -17,7 +18,8 @@ export function windowStats(trades,now,complete=false){
  const sum=a=>a.reduce((n,t)=>n+Number(t.usd_volume),0),unique=a=>new Set(a.map(t=>t.trader).filter(Boolean)).size;
  return {buyVolume:sum(buys),sellVolume:sum(sells),volume:sum(rows),buys:buys.length,sells:sells.length,transactions:rows.length,traders:unique(rows),buyers:unique(buys),sellers:unique(sells)};
 }
-export async function liveMarket(address){
+export const liveMarket=sharedLive(readLiveMarket);
+async function readLiveMarket(address){
  address=address.toLowerCase();
  const row=(await q('SELECT t.*,l.launchpad_id FROM tokens t LEFT JOIN launches l ON l.token=t.address WHERE t.address=$1',[address]))[0];
  if(!row)return null;

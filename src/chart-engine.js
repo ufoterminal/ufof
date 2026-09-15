@@ -169,9 +169,11 @@ export async function ownChart(source,token,tf,remote,market={}){
  const tail=tape.filter(t=>t.at>=candles.at(-1)?.bucket);
  const livePool=state.rpc?.pool&&tail.length&&tail.every(t=>t.pool?.toLowerCase()===state.rpc.pool.toLowerCase())?state.rpc.pool:null;
  const lastTradeAt=tail.length?tail.reduce((n,t)=>Math.max(n,t.at),0):null;
+ const lastExecution=tail.filter(t=>t.at===lastTradeAt).sort((a,b)=>(b.block??0)-(a.block??0)||(b.logIndex??0)-(a.logIndex??0))[0];
+ const lastTradeCursor=livePool&&Number.isSafeInteger(lastExecution?.block)&&Number.isSafeInteger(lastExecution?.logIndex)?{at:lastExecution.at,block:lastExecution.block,logIndex:lastExecution.logIndex}:null;
  return {candles,closes:candles.map(c=>({bucket:c.bucket,value:c.close,volume:c.volume})),chartMode:'candles',
   trades:tape.sort((a,b)=>b.at-a.at).slice(0,100),
-  history:{engine:'local-trades-v1',pool:livePool,lastTradeAt,openPolicy:'previous-recorded-close',complete:!!state.complete,records:tape.length,rpc:state.rpc||null,rpcError:state.rpcError||null,bootstrap:bootstrap.length>0,loading:flights.has(key)||(hasPagedHistory(source)&&!state.complete),from:tape.length?tape.reduce((n,t)=>Math.min(n,t.at),Infinity):null},
+  history:{engine:'local-trades-v1',pool:livePool,lastTradeAt,lastTradeCursor,openPolicy:'previous-recorded-close',complete:!!state.complete,records:tape.length,rpc:state.rpc||null,rpcError:state.rpcError||null,bootstrap:bootstrap.length>0,loading:flights.has(key)||(hasPagedHistory(source)&&!state.complete),from:tape.length?tape.reduce((n,t)=>Math.min(n,t.at),Infinity):null},
   notice:failure?'History refresh unavailable; stored trades retained.':hasPagedHistory(source)&&!state.complete?'Earlier trade history is still loading.':bootstrap.length?'Earlier candles use provider history; recent candles are built from stored trades.':''};
 }
 export function continuousCandles(rows){

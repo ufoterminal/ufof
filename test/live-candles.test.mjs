@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import {appendLiveCandles,mergeLiveMarket,currentChartValue} from '../public/live-candles.js';
 const pool='primary',last=86400+120;
 const trades=[{id:'a',pool,at:last+60,price:2,usd_volume:3},{id:'b',pool,at:last+120,price:3,usd_volume:4}];
+test('same-second later log updates every frame without replaying covered swaps',()=>{
+ for(const seconds of [60,300,900,3600,14400,86400]){
+  const base=[{bucket:Math.floor(last/seconds)*seconds,open:1,high:1,low:1,close:1,volume:5}];
+  const history={pool,lastTradeAt:last,lastTradeCursor:{at:last,block:20,logIndex:3}};
+  const rows=[2,3,4].map(logIndex=>({id:String(logIndex),at:last,block:20,logIndex,pool,price:2,usd_volume:3}));
+  const result=appendLiveCandles(base,history,[...rows,...rows],seconds,pool,last+1);
+  assert.equal(result.at(-1).close,2);assert.equal(result.at(-1).volume,8);
+ }
+});
 test('all six intervals end at the same verified execution; duplicate delivery adds no volume',()=>{
  for(const seconds of [60,300,900,3600,14400,86400]){
   const base=[{bucket:Math.floor(last/seconds)*seconds,open:1,high:1,low:1,close:1,volume:5}];

@@ -22,7 +22,7 @@ function acceptLive(d){
  for(const t of d.chartTrades||[]){const key=t.tx&&t.logIndex!=null?t.tx.toLowerCase()+':'+t.logIndex:t.id;if(key)chartTape.set(key,t);}
  if(chartTape.size>3000){const keep=[...chartTape.entries()].sort((a,b)=>b[1].at-a[1].at).slice(0,3000);chartTape.clear();for(const [key,t] of keep)chartTape.set(key,t);}
  liveData=d;liveAt=Date.now();liveFailures=0;
- if(currentDetail&&currentDetail.timeframe===tf){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
+ if(currentDetail){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
 }
 function connectEvents(){
  if(wallet||document.hidden||eventStream||!window.EventSource)return;
@@ -205,6 +205,7 @@ function paintDetail(d){
  $('chart-error').textContent=d.errors?.chart?'Chart refresh unavailable. Previously loaded candles are retained.':'';
  $('trade-error').textContent=d.errors?.trades?'Transaction refresh unavailable.':'';
  $('token-heading').querySelector('h1')?.insertAdjacentHTML('beforeend',padBadge(t));
+ if(d.timeframe!==tf){paintTrades(d);return;}
  if(window.LightweightCharts){setupChart();
  const scale=chartScale(t),k=scale.factor,fmt=scale.format;
  document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x.dataset.scale===scaleMode));
@@ -229,6 +230,9 @@ function paintDetail(d){
   if(scale.unavailable)$('chart-error').textContent='Market cap needs a supply figure this token has not reported; showing price.';
  }else if(!d.errors?.chart||chartTokenTf!==tf){updateSeries(candleSeries,[],true);updateSeries(lineSeries,[],true);updateSeries(volumeSeries,[],true);$('chart-empty').style.display='grid';$('chart-empty').textContent=d.supported?'No candles available for this timeframe.':'Chart integration is not available for this source yet.';$('chart-legend').textContent='No price history';}}
  else{$('chart-empty').textContent='Chart library could not load. Refresh to retry.';}
+ paintTrades(d);
+}
+function paintTrades(d){
  reconcileTrades($('trades'),d.trades,s=>'<td title="'+esc(date(s.at))+'">'+age(s.at)+' ago</td><td class="'+(s.buy?'up':'down')+'">'+(s.buy?'Buy':'Sell')+'</td><td>'+usd(s.usd_volume)+'</td><td>'+price(s.price)+'</td><td>'+esc(short(s.trader))+'</td><td>'+(/^0x[0-9a-f]{64}$/i.test(s.tx||'')?'<a href="https://arc-scan.org/tx/'+esc(s.tx)+'" target="_blank" rel="noopener">'+esc(short(s.tx))+' ↗</a>':'—')+'</td>','<tr><td colspan="6" class="empty">'+(d.errors?.trades?'Could not load recent trades.':'No recent trades returned by this source.')+'</td></tr>');
 }
 // The holders panel is fetched only when it is opened, and only once per token, because the list comes
