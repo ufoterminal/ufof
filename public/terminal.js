@@ -1,6 +1,7 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
 import {retainValuation} from './market-state.js';
-import {appendLiveCandles,mergeLiveMarket,currentChartValue} from './live-candles.js';
+import {appendLiveCandles,mergeLiveMarket} from './live-candles.js';
+import {chartMatchesMarket} from './chart-consistency.js';
 import {walletAmount,walletNotice} from './wallet-ui.js';
 import {fillChartGaps} from './chart-gaps.js';
 import {updateSeries,reconcileTrades,updateMarketRows,burnText,burnParts,syncNotice,retainBurnReading} from './live-ui.js';
@@ -128,7 +129,7 @@ async function search(){
 $('global-search').addEventListener('input',()=>{searchSeq++;searchController?.abort();clearTimeout(searchTimer);searchTimer=setTimeout(search,220);});
 document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();$('global-search').focus();}if(e.key==='Escape')$('search-results').hidden=true;});
 document.addEventListener('click',e=>{if(!e.target.closest('.searchbox'))$('search-results').hidden=true;});
-let chart,candleSeries,lineSeries,volumeSeries,chartTokenTf=null,currentCandleLine,currentLineLine;
+let chart,candleSeries,lineSeries,volumeSeries,chartTokenTf=null;
 function detailShell(){
  app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart scale"><button data-scale="price" class="'+(scaleMode==='price'?'active':'')+'">Price</button><button data-scale="mc" class="'+(scaleMode==='mc'?'active':'')+'">MC</button></div><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><button class="panel-tab" data-panel="same">SAME TICKER</button><button class="panel-tab" data-panel="map">HOLDER MAP</button><span id="trade-count"></span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th></tr></thead><tbody id="holders"><tr><td colspan="4" class="empty">Loading holders…</td></tr></tbody></table><table class="trades-table" id="same-table" hidden><thead><tr><th>TOKEN</th><th>PRICE</th><th>MCAP</th><th>VOLUME</th><th>AGE</th></tr></thead><tbody id="same"><tr><td colspan="5" class="empty">Looking for tokens with this ticker…</td></tr></tbody></table><div id="map-panel" hidden><div class="map-note" id="map-status">Reading the transfer history…</div><div class="map-layout"><div class="map-canvas" id="map-canvas"></div><div class="map-clusters" id="map-clusters"></div></div></div></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
  app.addEventListener('click',e=>{const b=e.target.closest('[data-tf]');if(b){tf=b.dataset.tf;history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode+'&scale='+scaleMode);document.querySelectorAll('[data-tf]').forEach(x=>x.classList.toggle('active',x===b));loadDetail({keepFlow:true});}const v=e.target.closest('[data-view]');if(v){viewMode=v.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===v));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}const sc=e.target.closest('[data-scale]');if(sc){scaleMode=sc.dataset.scale;document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x===sc));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode+'&scale='+scaleMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}
@@ -145,10 +146,8 @@ function setupChart(){
  candleSeries=chart.addCandlestickSeries({upColor:'#17a97f',downColor:'#e03b53',borderUpColor:'#17a97f',borderDownColor:'#e03b53',borderVisible:true,wickUpColor:'#17a97f',wickDownColor:'#e03b53',lastValueVisible:true,priceLineVisible:true,priceFormat:{type:'custom',formatter:price,minMove:.00000001}});
  lineSeries=chart.addLineSeries({color:'#3f6fd8',lineWidth:2,visible:false,priceFormat:{type:'custom',formatter:price,minMove:.00000001}});
  volumeSeries=chart.addHistogramSeries({priceScaleId:'volume',priceFormat:{type:'volume'},base:0});volumeSeries.priceScale().applyOptions({scaleMargins:{top:.82,bottom:0}});
- candleSeries.applyOptions({lastValueVisible:false,priceLineVisible:false});
- lineSeries.applyOptions({lastValueVisible:false,priceLineVisible:false});
- const mark={price:0,color:'#17a97f',lineWidth:1,lineStyle:2,axisLabelVisible:false,lineVisible:false,title:'Latest'};
- currentCandleLine=candleSeries.createPriceLine(mark);currentLineLine=lineSeries.createPriceLine(mark);
+ candleSeries.applyOptions({lastValueVisible:true,priceLineVisible:true});
+ lineSeries.applyOptions({lastValueVisible:true,priceLineVisible:true});
  new ResizeObserver(()=>chart.applyOptions({width:node.clientWidth,height:node.clientHeight})).observe(node);
  chart.subscribeCrosshairMove(p=>{const c=p.seriesData.get(candleSeries),l=p.seriesData.get(lineSeries),v=p.seriesData.get(volumeSeries);const volume=v&&valid(v.value)?'   Vol '+usd(v.value):'';const fmt=currentDetail?chartScale(currentDetail.market).format:price;if(c)$('chart-legend').textContent='O '+fmt(c.open)+'   H '+fmt(c.high)+'   L '+fmt(c.low)+'   C '+fmt(c.close)+volume;else if(l)$('chart-legend').textContent='Recorded close '+fmt(l.value)+volume;});
 }
@@ -211,15 +210,15 @@ function paintDetail(d){
  const scale=chartScale(t),k=scale.factor,fmt=scale.format;
  document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x.dataset.scale===scaleMode));
  const live=fillChartGaps(appendLiveCandles(d.candles,d.history,[...chartTape.values()],TIMEFRAME_SECONDS[tf],t.pool),TIMEFRAME_SECONDS[tf]);
- const current=currentChartValue(t,scale.label==='Market cap'?'mc':'price');
  const delayed=!liveData||liveData.stale||(!streamHealthy&&Date.now()-liveAt>20000);
- const mark={price:current??0,axisLabelVisible:current!=null,lineVisible:current!=null,title:delayed?'Last known':'Latest'};
- currentCandleLine.applyOptions(mark);currentLineLine.applyOptions(mark);
- const autoRange=original=>{const info=original();if(info?.priceRange&&current!=null)info.priceRange={minValue:Math.min(info.priceRange.minValue,current),maxValue:Math.max(info.priceRange.maxValue,current)};return info;};
- candleSeries.applyOptions({autoscaleInfoProvider:autoRange});lineSeries.applyOptions({autoscaleInfoProvider:autoRange});
- const chartBehind=current!=null&&live.length&&Math.abs(live.at(-1).close*k-current)>Math.max(current*0.00001,1e-15);
- $('chart-live-status').textContent=(delayed?'Last known ':'Latest ')+scale.label+': '+(current==null?'—':fmt(current))+(chartBehind?' · Recorded candles differ; waiting for verified pool trades.':'')+(delayed?' · Source may be delayed.':'');
- if(live.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',base=(t.price>0?t.price:live.at(-1)?.close??d.closes?.at(-1)?.value??0)*k,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
+ const chartBehind=live.length&&!chartMatchesMarket(live,d.history,t);
+ $('chart-live-status').textContent=delayed?'Feed delayed · Showing stored verified data.':'Connected to market feed';
+ if(chartBehind){
+  updateSeries(candleSeries,[],true);updateSeries(lineSeries,[],true);updateSeries(volumeSeries,[],true);chartTokenTf=null;
+  $('chart-empty').style.display='grid';$('chart-empty').textContent='Synchronizing primary-pool trade history…';
+  $('chart-legend').textContent='Waiting for matching verified trades';paintTrades(d);return;
+ }
+ if(live.length){const closing=false,lineOnly=viewMode==='line',base=(t.price>0?t.price:live.at(-1)?.close??0)*k,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
   const axisFmt=scale.label==='Price'?value=>chartPrice(value,minMove):fmt;
   candleSeries.applyOptions({visible:!closing&&!lineOnly,priceFormat:{type:'custom',formatter:axisFmt,minMove}});
   lineSeries.applyOptions({visible:closing||lineOnly,color:'#3f6fd8',priceFormat:{type:'custom',formatter:axisFmt,minMove}});

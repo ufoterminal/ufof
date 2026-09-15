@@ -107,7 +107,9 @@ test('search results are ranked by what a token is worth, not its unit price',()
 test('live quotes are separate from execution-derived candle OHLC',()=>{
  assert.ok(!terminal.includes('function withLivePrice('),'quotes cannot rewrite historical OHLC');
  assert.ok(terminal.includes('appendLiveCandles(d.candles,d.history,'),'only provenance-checked trades update candles');
- assert.ok(terminal.includes('currentChartValue(t,'),'all frames share the current quote marker');
+ assert.ok(!terminal.includes('createPriceLine('),'no independent quote marker');
+ assert.ok(terminal.includes('chartMatchesMarket(live,d.history,t)'),'a mismatched history cannot render as live');
+ assert.ok(terminal.includes('lastValueVisible:true,priceLineVisible:true'),'the series owns its price label');
 });
 
 test('chart colours are deep enough for the axis label to read white',()=>{

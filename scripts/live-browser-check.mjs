@@ -39,13 +39,14 @@ try{
  await page.locator('[data-scale="mc"]').click();
  for(const frame of ['1m','5m','15m','1h','4h','1d']){
   await page.locator('[data-tf="'+frame+'"]').click();
-  await page.waitForFunction(()=>document.querySelector('#chart-empty').style.display==='none'&&window.testMark.options().price===12000&&Math.abs(window.testCandles.data().at(-1)?.close-12000)<.00001);
-  assert.equal(await page.evaluate(()=>window.testMark.options().price),12000);
+  await page.waitForFunction(()=>document.querySelector('#chart-empty').style.display==='none'&&Math.abs(window.testCandles.data().at(-1)?.close-12000)<.00001);
+  assert.equal(await page.evaluate(()=>window.testMark===undefined),true);
+  assert.equal(await page.evaluate(()=>window.testCandles.options().lastValueVisible),true);
  }
  // A quiet SSE stream is not a reason to restore an old timeframe valuation after 20 seconds.
  await page.evaluate(()=>{const now=Date.now();Date.now=()=>now+25000;});
  await page.locator('[data-tf="1m"]').click();
- await page.waitForFunction(()=>window.testMark.options().price===12000);
+ await page.waitForFunction(()=>window.testCandles.data().at(-1)?.close===12000);
  assert.ok((await page.locator('#token-heading .head-price').textContent()).includes('0.012'));
  assert.deepEqual(errors,[]);
  console.log('PASS: live transactions, stable rows, six-frame candle close and MC marker equality, quiet-SSE valuation retention, zero browser errors');
