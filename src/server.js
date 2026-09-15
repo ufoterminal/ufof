@@ -3,7 +3,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {init,pool,storage} from './db.js';
 import {syncExternal} from './providers.js';
-import {listMarkets,getMarket,invalidateMarkets} from './market-service.js';
+import {listMarkets,getMarket,invalidateMarkets,marketPricesFor} from './market-service.js';
 import {startWorker} from './worker.js';
 import {snapshotStatus} from './snapshots.js';
 import {onchainStatus} from './onchain.js';
@@ -41,17 +41,7 @@ app.get('/api/holder-map/:address',route(async(req,res)=>{
 }));
 app.get('/api/wallet/:address',route(async(req,res)=>{
  if(!/^0x[0-9a-f]{40}$/i.test(req.params.address))return res.status(400).json({error:'Invalid address'});
- // The same rows the rest of the site shows, asked for by address so nothing is missed off the end of a
- // page. Requested in batches because the list answers a bounded number at a time.
- const lookup=async addresses=>{
-  const found=new Map();
-  for(let i=0;i<addresses.length;i+=100){
-   const {rows}=await listMarkets({addresses:addresses.slice(i,i+100).join(','),mode:'watch',limit:100});
-   for(const row of rows)found.set(row.address,row);
-  }
-  return found;
- };
- res.json(await walletHoldings(req.params.address,lookup));
+ res.json(await walletHoldings(req.params.address,marketPricesFor));
 }));
 app.get('/api/onchain',route(async(_,res)=>res.json({...await onchainStatus(),metadata:await metadataStatus(),retention:await retentionStatus()})));
 app.get('/api/indexer',route(async(_,res)=>res.json(await snapshotStatus())));

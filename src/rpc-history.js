@@ -95,12 +95,12 @@ export function decodePoolTrade(log,info,at){
 }
 // Target one verified USDC pool. A bounded 10k-block window respects public
 // RPC log limits; cursors advance only after the entire window is decoded.
-export async function poolHistory(token,address,state={},descriptor){
+export async function poolHistory(token,address,state={},descriptor,{headOnly=false}={}){
  state=state||{};
  address=String(address||'').toLowerCase();token=token.toLowerCase();
  if(!/^0x(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(address))return null;
  if(state.schema!==3||state.pool&&state.pool!==address)state={};
- const info=await poolInfo(address,token,descriptor),head=Math.max(0,Number(await rpc.getBlockNumber())-12);
+ const info=await poolInfo(address,token,descriptor),head=Math.max(0,Number(await rpc.getBlockNumber({cacheTime:headOnly?2000:30000}))-12);
  if(state.head>head)throw Error('RPC head is behind the indexed checkpoint');
  if(state.hash&&(await rpc.getBlock({blockNumber:BigInt(state.head)})).hash!==state.hash){
   state={generation:Date.now()};times.clear();
@@ -110,16 +110,22 @@ export async function poolHistory(token,address,state={},descriptor){
  if(state.head!=null&&head-state.head>=10000){from=state.head+1;to=Math.min(head,from+9999);}
  else {to=state.oldest!=null?state.oldest-1:head;from=Math.max(0,to-9999);}
  const ranges=to>=0?[{from,to}]:[];
+ if(headOnly){
+  ranges.length=0;
+  const start=Math.max(0,state.head==null?head-2047:state.head+1,head-9999);
+  if(start<=head)ranges.push({from:start,to:head});
+  else return {trades:[],state};
+ }
  // One window per pass meant a token a few weeks old took hours to reach its first day. Several are taken
  // per pass, in sequence rather than together, and they are consecutive so the checkpoint still moves in
  // one unbroken line.
- const extra=Math.max(0,Math.min(60,Number(process.env.RPC_HISTORY_WINDOWS||10))-1);
+ const extra=headOnly?0:Math.max(0,Math.min(60,Number(process.env.RPC_HISTORY_WINDOWS||10))-1);
  let edge=ranges.length?ranges[ranges.length-1].from:null;
  for(let i=0;i<extra&&edge!=null&&edge>0;i++){
   const stop=edge-1,start=Math.max(0,stop-9999);
   ranges.push({from:start,to:stop});edge=start;
  }
- if(state.head!=null&&head>state.head&&head-state.head<10000)ranges.push({from:state.head+1,to:head});
+ if(!headOnly&&state.head!=null&&head>state.head&&head-state.head<10000)ranges.push({from:state.head+1,to:head});
  const trades=[];
  for(const range of ranges){
   const logs=await logsAnywhere({...(info.v4?{address:v4Manager,event:v4Swap,args:{id:address}}:{address,events}),fromBlock:BigInt(range.from),toBlock:BigInt(range.to)});

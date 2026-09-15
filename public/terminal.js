@@ -1,5 +1,7 @@
 import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
 import {retainValuation} from './market-state.js';
+import {appendLiveCandles,mergeLiveMarket,currentChartValue} from './live-candles.js';
+import {walletAmount,walletNotice} from './wallet-ui.js';
 import {updateSeries,reconcileTrades,updateMarketRows,burnText,burnParts,syncNotice,retainBurnReading} from './live-ui.js';
 import {esc,valid,price,compactPrice,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
@@ -13,8 +15,12 @@ let listData=null,listSeq=0,listController,searchSeq=0,searchController,searchTi
 let liveData=null,liveTimer,liveController,liveBusy=false,liveFailures=0,liveAt=0;
 let eventStream=null,streamHealthy=false,listNoticeTimer;
 const frameCache=new Map();
+const chartTape=new Map();
 function acceptLive(d){
  if(!d?.market)return;
+ if(liveData?.market?.pool!==d.market.pool)chartTape.clear();
+ for(const t of d.chartTrades||[]){const key=t.tx&&t.logIndex!=null?t.tx.toLowerCase()+':'+t.logIndex:t.id;if(key)chartTape.set(key,t);}
+ if(chartTape.size>3000){const keep=[...chartTape.entries()].sort((a,b)=>b[1].at-a[1].at).slice(0,3000);chartTape.clear();for(const [key,t] of keep)chartTape.set(key,t);}
  liveData=d;liveAt=Date.now();liveFailures=0;
  if(currentDetail&&currentDetail.timeframe===tf){currentDetail=mergeLive(currentDetail);paintDetail(currentDetail);}
 }
@@ -32,10 +38,9 @@ function disconnectEvents(){eventStream?.close();eventStream=null;streamHealthy=
 function mergeLive(d){
  d={...d,market:retainBurnReading(d.market,currentDetail?.market)};
  d.market=retainValuation(d.market,currentDetail?.market);
- if(!liveData||Date.now()-liveAt>20000)return d;
- const fields=Object.fromEntries(Object.entries(liveData.market||{}).filter(([,v])=>v!=null));
+ if(!liveData)return d;
  const trades=liveData.trades?.length?liveData.trades:d.trades;
- return {...d,market:retainValuation({...d.market,...fields},d.market),trades};
+ return {...d,market:retainBurnReading(mergeLiveMarket(d.market,liveData.market),currentDetail?.market),trades};
 }
 async function loadLive(force=false){
  if(liveBusy||document.hidden||!address||(streamHealthy&&!force))return;
@@ -109,20 +114,20 @@ function paintList(){
 async function search(){
  const query=$('global-search').value.trim(),seq=++searchSeq;searchController?.abort();
  if(!query){$('search-results').hidden=true;return;}searchController=new AbortController();$('search-results').hidden=false;
- $('search-results').innerHTML='<div class="side-note" style="padding:12px">Searching the archive…</div>';
+ const asWallet=/^0x[0-9a-fA-F]{40}$/.test(query)?'<a href="/wallet/'+esc(query.toLowerCase())+'"><span class="search-token"><span class="token-icon">◎</span><span><b>Wallet</b><small>'+esc(short(query))+' · see what it holds</small></span></span></a>':'';
+ $('search-results').innerHTML=asWallet+'<div class="side-note" style="padding:12px">Searching the archive…</div>';
  try{
   const d=await api('/api/markets?q='+encodeURIComponent(query)+'&limit=10',searchController);if(seq!==searchSeq)return;
-  // An address that is not a token in the list is still worth something: it is probably a wallet.
-  const asWallet=/^0x[0-9a-fA-F]{40}$/.test(query)&&!d.rows.some(t=>t.address===query.toLowerCase())
-   ?'<a href="/wallet/'+esc(query.toLowerCase())+'"><span class="search-token"><span class="token-icon">\u25ce</span><span><b>Wallet</b><small>'+esc(short(query))+' \u00b7 see what it holds</small></span></span></a>':'';
-  $('search-results').innerHTML=asWallet+d.rows.map(t=>'<a href="/token/'+esc(t.address)+'"><span class="search-token">'+icon(t)+'<span><b>'+esc(t.symbol)+'</b><small>'+esc(t.name)+'</small></span></span><span class="mono" title="Market cap">'+(valid(t.marketCap)?usd(t.marketCap):'\u2014')+'</span></a>').join('')||(asWallet||'<div class="side-note" style="padding:12px">No indexed token found. Coverage depends on the connected sources.</div>');
+  const tokenRows=d.rows.map(t=>'<a href="/token/'+esc(t.address)+'"><span class="search-token">'+icon(t)+'<span><b>'+esc(t.symbol)+'</b><small>'+esc(t.name)+'</small></span></span><span class="mono" title="Market cap">'+(valid(t.marketCap)?usd(t.marketCap):'\u2014')+'</span></a>').join('');
+  const matchingToken=d.rows.some(t=>t.address===query.toLowerCase());
+  $('search-results').innerHTML=(matchingToken?tokenRows+asWallet:asWallet+tokenRows)||'<div class="side-note" style="padding:12px">No indexed token found. Coverage depends on the connected sources.</div>';
  paintPadBadges($('search-results'),d.rows);
- }catch(e){if(e.name!=='AbortError'&&seq===searchSeq)$('search-results').textContent='Search unavailable. Try again.';}
+ }catch(e){if(e.name!=='AbortError'&&seq===searchSeq)$('search-results').innerHTML=asWallet+'<div class="side-note">Token search unavailable. Try again.</div>';}
 }
 $('global-search').addEventListener('input',()=>{searchSeq++;searchController?.abort();clearTimeout(searchTimer);searchTimer=setTimeout(search,220);});
 document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();$('global-search').focus();}if(e.key==='Escape')$('search-results').hidden=true;});
 document.addEventListener('click',e=>{if(!e.target.closest('.searchbox'))$('search-results').hidden=true;});
-let chart,candleSeries,lineSeries,volumeSeries,chartTokenTf=null;
+let chart,candleSeries,lineSeries,volumeSeries,chartTokenTf=null,currentCandleLine,currentLineLine;
 function detailShell(){
  app.innerHTML='<div id="token-heading" class="token-head"><a class="back" href="/" aria-label="Back to markets">←</a><div class="skeleton" style="width:230px"></div></div><div class="detail-layout"><section class="chart-main"><div class="chart-tools"><div class="timeframes">'+['1m','5m','15m','1h','4h','1d'].map(v=>'<button data-tf="'+v+'" class="'+(v===tf?'active':'')+'">'+v+'</button>').join('')+'</div><div class="chart-actions"><div class="chart-modes" aria-label="Chart scale"><button data-scale="price" class="'+(scaleMode==='price'?'active':'')+'">Price</button><button data-scale="mc" class="'+(scaleMode==='mc'?'active':'')+'">MC</button></div><div class="chart-modes" aria-label="Chart type"><button data-view="candles" class="'+(viewMode==='candles'?'active':'')+'">Candles</button><button data-view="line" class="'+(viewMode==='line'?'active':'')+'">Line</button></div><button id="fit-chart" class="muted">Reset view</button></div></div><div class="chart-legend" id="chart-legend">Loading candles…</div><div class="chart-container" id="chart-container"><div id="chart-empty" class="chart-empty">Connecting to chart data…</div></div><div class="chart-credit">Charts powered by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></div><div class="inline-error" id="chart-error"></div><div class="trade-tabs"><button class="panel-tab active" data-panel="trades">TRANSACTIONS</button><button class="panel-tab" data-panel="holders">HOLDERS</button><button class="panel-tab" data-panel="same">SAME TICKER</button><button class="panel-tab" data-panel="map">HOLDER MAP</button><span id="trade-count"></span></div><div id="trade-error" class="inline-error"></div><div class="table-scroll" style="min-height:180px;max-height:520px"><table class="trades-table"><thead><tr><th>TIME</th><th>TYPE</th><th>USD</th><th>PRICE</th><th>TRADER</th><th>TXN ↗</th></tr></thead><tbody id="trades"><tr><td colspan="6" class="empty">Loading transactions…</td></tr></tbody></table><table class="trades-table" id="holders-table" hidden><thead><tr><th>#</th><th>HOLDER</th><th>BALANCE</th><th>SHARE</th></tr></thead><tbody id="holders"><tr><td colspan="4" class="empty">Loading holders…</td></tr></tbody></table><table class="trades-table" id="same-table" hidden><thead><tr><th>TOKEN</th><th>PRICE</th><th>MCAP</th><th>VOLUME</th><th>AGE</th></tr></thead><tbody id="same"><tr><td colspan="5" class="empty">Looking for tokens with this ticker…</td></tr></tbody></table><div id="map-panel" hidden><div class="map-note" id="map-status">Reading the transfer history…</div><div class="map-layout"><div class="map-canvas" id="map-canvas"></div><div class="map-clusters" id="map-clusters"></div></div></div></div></section><aside class="details-side" id="detail-metrics"><div class="skeleton"></div></aside></div>';
  app.addEventListener('click',e=>{const b=e.target.closest('[data-tf]');if(b){tf=b.dataset.tf;history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode+'&scale='+scaleMode);document.querySelectorAll('[data-tf]').forEach(x=>x.classList.toggle('active',x===b));loadDetail({keepFlow:true});}const v=e.target.closest('[data-view]');if(v){viewMode=v.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===v));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}const sc=e.target.closest('[data-scale]');if(sc){scaleMode=sc.dataset.scale;document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x===sc));history.replaceState(null,'',location.pathname+'?tf='+tf+'&view='+viewMode+'&scale='+scaleMode);chartTokenTf=null;if(currentDetail)paintDetail(currentDetail);}
@@ -131,6 +136,7 @@ function detailShell(){
 function setupChart(){
  if(chart)return;
  const node=$('chart-container');
+ const status=document.createElement('div');status.id='chart-live-status';status.className='side-note';status.setAttribute('role','status');$('chart-legend').after(status);
  chart=window.LightweightCharts.createChart(node,{width:node.clientWidth,height:node.clientHeight,layout:{background:{color:'#0a1421'},textColor:'#7089a5',fontFamily:'IBM Plex Mono, monospace',fontSize:10},grid:{vertLines:{color:'#142236'},horzLines:{color:'#142236'}},rightPriceScale:{borderColor:'#24364d',scaleMargins:{top:.07,bottom:.24},autoScale:true},timeScale:{borderColor:'#24364d',timeVisible:true,secondsVisible:false,rightOffset:3,barSpacing:7,minBarSpacing:2},crosshair:{mode:0,vertLine:{color:'#728aa4',width:1,style:3,labelBackgroundColor:'#26415e'},horzLine:{color:'#728aa4',width:1,style:3,labelBackgroundColor:'#26415e'}},handleScroll:true,handleScale:true});
  // Deeper than the palette used elsewhere on purpose: the price label on the axis takes the series colour
  // as its background and picks its text colour from that background's brightness. The lighter shades got
@@ -138,6 +144,10 @@ function setupChart(){
  candleSeries=chart.addCandlestickSeries({upColor:'#17a97f',downColor:'#e03b53',borderUpColor:'#17a97f',borderDownColor:'#e03b53',borderVisible:true,wickUpColor:'#17a97f',wickDownColor:'#e03b53',lastValueVisible:true,priceLineVisible:true,priceFormat:{type:'custom',formatter:price,minMove:.00000001}});
  lineSeries=chart.addLineSeries({color:'#3f6fd8',lineWidth:2,visible:false,priceFormat:{type:'custom',formatter:price,minMove:.00000001}});
  volumeSeries=chart.addHistogramSeries({priceScaleId:'volume',priceFormat:{type:'volume'},base:0});volumeSeries.priceScale().applyOptions({scaleMargins:{top:.82,bottom:0}});
+ candleSeries.applyOptions({lastValueVisible:false,priceLineVisible:false});
+ lineSeries.applyOptions({lastValueVisible:false,priceLineVisible:false});
+ const mark={price:0,color:'#17a97f',lineWidth:1,lineStyle:2,axisLabelVisible:false,lineVisible:false,title:'Latest'};
+ currentCandleLine=candleSeries.createPriceLine(mark);currentLineLine=lineSeries.createPriceLine(mark);
  new ResizeObserver(()=>chart.applyOptions({width:node.clientWidth,height:node.clientHeight})).observe(node);
  chart.subscribeCrosshairMove(p=>{const c=p.seriesData.get(candleSeries),l=p.seriesData.get(lineSeries),v=p.seriesData.get(volumeSeries);const volume=v&&valid(v.value)?'   Vol '+usd(v.value):'';const fmt=currentDetail?chartScale(currentDetail.market).format:price;if(c)$('chart-legend').textContent='O '+fmt(c.open)+'   H '+fmt(c.high)+'   L '+fmt(c.low)+'   C '+fmt(c.close)+volume;else if(l)$('chart-legend').textContent='Recorded close '+fmt(l.value)+volume;});
 }
@@ -150,23 +160,10 @@ function chartScale(t){
  return supply>0?{factor:supply,format:usd,label:'Market cap'}:{factor:1,format:price,label:'Price',unavailable:true};
 }
 
-// The newest candle is still open: it covers a period that has not ended, and the price shown beside it is
-// the latest the market reported. A stored snapshot is built a moment behind, so without this the header
-// and the chart disagreed, and differed again on every timeframe because each snapshot is prepared at its
-// own moment. Only the open candle is touched, and only to the price we are already showing.
-function withLivePrice(candles,price,seconds){
- if(!candles.length||!valid(price)||!(price>0))return candles;
- const last=candles[candles.length-1];
- const now=Math.floor(Date.now()/1000);
- const open=seconds?last.bucket+seconds>now:true;
- if(open)return [...candles.slice(0,-1),{...last,close:price,high:Math.max(last.high,price),low:Math.min(last.low,price)}];
- // No execution means no new candle: live must not mean invented activity.
- return candles;
-}
-
 const TIMEFRAME_SECONDS={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 
 function paintDetail(d){
+ if(d.timeframe&&d.timeframe!==tf)return;
  const t=d.market;document.title=(t.symbol||'Token')+' · UFO Screener';
  $('token-heading').innerHTML='<a class="back" href="/" aria-label="Back to markets">←</a>'+icon(t)+'<div><h1>'+esc(t.symbol)+(t.originalTicker?'<span class="og-tag" title="The oldest contract we have indexed under this ticker">OG</span>':'')+'</h1><span class="muted">'+esc(t.name)+'</span></div><strong class="head-price">'+price(t.price)+'</strong><span class="'+color(t.changes['24h'])+'">'+percent(t.changes['24h'])+'</span><div class="contract">'+star(t.address)+'<span>'+esc(short(t.address))+'</span><button class="icon-btn" data-copy="'+esc(t.address)+'" aria-label="Copy contract address">⧉</button></div>';
   // The overview a trader reads: the price twice, the three sizes of the market, the day's moves, and then
@@ -211,14 +208,22 @@ function paintDetail(d){
  if(window.LightweightCharts){setupChart();
  const scale=chartScale(t),k=scale.factor,fmt=scale.format;
  document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x.dataset.scale===scaleMode));
- const live=withLivePrice(d.candles,t.price,TIMEFRAME_SECONDS[tf]);
+ const live=appendLiveCandles(d.candles,d.history,[...chartTape.values()],TIMEFRAME_SECONDS[tf],t.pool);
+ const current=currentChartValue(t,scale.label==='Market cap'?'mc':'price');
+ const delayed=!liveData||liveData.stale||(!streamHealthy&&Date.now()-liveAt>20000);
+ const mark={price:current??0,axisLabelVisible:current!=null,lineVisible:current!=null,title:delayed?'Last known':'Latest'};
+ currentCandleLine.applyOptions(mark);currentLineLine.applyOptions(mark);
+ const autoRange=original=>{const info=original();if(info?.priceRange&&current!=null)info.priceRange={minValue:Math.min(info.priceRange.minValue,current),maxValue:Math.max(info.priceRange.maxValue,current)};return info;};
+ candleSeries.applyOptions({autoscaleInfoProvider:autoRange});lineSeries.applyOptions({autoscaleInfoProvider:autoRange});
+ const chartBehind=current!=null&&live.length&&Math.abs(live.at(-1).close*k-current)>Math.max(current*0.00001,1e-15);
+ $('chart-live-status').textContent=(delayed?'Last known ':'Latest ')+scale.label+': '+(current==null?'—':fmt(current))+(chartBehind?' · Recorded candles differ; waiting for verified pool trades.':'')+(delayed?' · Source may be delayed.':'');
  if(live.length||(viewMode==='line'&&d.closes?.length)){const closing=viewMode==='line'&&d.chartMode==='close',lineOnly=viewMode==='line',base=(t.price>0?t.price:live.at(-1)?.close??d.closes?.at(-1)?.value??0)*k,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
   const axisFmt=scale.label==='Price'?value=>chartPrice(value,minMove):fmt;
   candleSeries.applyOptions({visible:!closing&&!lineOnly,priceFormat:{type:'custom',formatter:axisFmt,minMove}});
   lineSeries.applyOptions({visible:closing||lineOnly,color:'#3f6fd8',priceFormat:{type:'custom',formatter:axisFmt,minMove}});
   updateSeries(lineSeries,closing?(d.closes||[]).map(c=>({time:c.bucket,value:c.value*k})):(lineOnly?live.map(c=>({time:c.bucket,value:c.close*k})):[]),chartTokenTf!==tf);
   updateSeries(candleSeries,(closing?[]:live).map(c=>({time:c.bucket,open:c.open*k,high:c.high*k,low:c.low*k,close:c.close*k})),chartTokenTf!==tf);
-  updateSeries(volumeSeries,(closing?d.closes:d.candles).filter(c=>valid(c.volume)&&c.volume>=0).map(c=>({time:c.bucket,value:c.volume,color:closing?'#36588280':c.close>=c.open?'#23856c65':'#af435665'})),chartTokenTf!==tf);
+  updateSeries(volumeSeries,(closing?d.closes:live).filter(c=>valid(c.volume)&&c.volume>=0).map(c=>({time:c.bucket,value:c.volume,color:closing?'#36588280':c.close>=c.open?'#23856c65':'#af435665'})),chartTokenTf!==tf);
   if(chartTokenTf!==tf){chart.timeScale().fitContent();const bars=closing?d.closes.length:d.candles.length;if(bars>120)chart.timeScale().setVisibleLogicalRange({from:bars-120,to:bars+3});chartTokenTf=tf;}$('chart-empty').style.display='none';
   const last=closing?d.closes.at(-1):live.at(-1);$('chart-legend').textContent=(closing||lineOnly)?scale.label+' '+fmt((last.value??last.close)*k)+(valid(last.volume)?'   Vol '+usd(last.volume):''):'O '+fmt(last.open*k)+'   H '+fmt(last.high*k)+'   L '+fmt(last.low*k)+'   C '+fmt(last.close*k)+(valid(last.volume)?'   Vol '+usd(last.volume):'');
   if(scale.unavailable)$('chart-error').textContent='Market cap needs a supply figure this token has not reported; showing price.';
@@ -399,9 +404,9 @@ function walletShell(){
 // The explorer that answers a wallet's balances refuses often enough that one attempt left the page
 // reading as an empty wallet until it was reloaded by hand. It is asked again, and a later failure never
 // clears holdings that are already on screen.
-let walletFailures=0,walletLoaded=false,walletBusy=false,walletTimer,walletAt=0;
+let walletFailures=0,walletLoaded=false,walletBusy=false,walletTimer,walletAt=0,walletPending=false;
 // A wallet moves far less than a chart, so a settled page is refreshed slowly and only a failure hurries.
-const walletDelay=()=>walletFailures?Math.min(20000,2000*2**Math.min(walletFailures,3)):30000;
+const walletDelay=()=>walletPending?1200:walletFailures?Math.min(20000,2000*2**Math.min(walletFailures,3)):30000;
 async function loadWallet(){
  // Showing the tab asks for a refresh, and without this a few quick switches stacked requests on top of
  // each other until every one of them was slower than the last.
@@ -410,18 +415,19 @@ async function loadWallet(){
  try{
   const d=await api('/api/wallet/'+encodeURIComponent(wallet));
   $('wallet-head').innerHTML='<a class="back" href="/" aria-label="Back to markets">\u2190</a><div><h1>Wallet</h1><span class="muted">'+esc(short(d.address))+'</span></div>'
-   +'<strong class="head-price">'+usd(d.totals.valued)+'</strong><span class="muted">holdings value</span>'
+   +'<strong class="head-price">'+usd(d.totals.valued)+'</strong><span class="muted">'+(d.totals.partial?'known holdings value':'holdings value')+'</span>'
    +'<div class="contract"><span>'+esc(short(d.address))+'</span><button class="icon-btn" data-copy="'+esc(d.address)+'" aria-label="Copy wallet address">\u29c9</button><a href="https://arc-scan.org/address/'+esc(d.address)+'" target="_blank" rel="noopener">Arcscan \u2197</a></div>';
   $('wallet-count').textContent=count(d.totals.tokens)+' tokens \u00b7 '+usd(d.totals.inTokens)+' in tokens, '+usd(d.totals.inUsdc)+' in USDC'+(d.totals.unpriced?' \u00b7 '+count(d.totals.unpriced)+' unpriced':'');
-  const usdcRow=valid(d.usdc)&&d.usdc>0
+  const usdcRow=valid(d.usdc)&&d.usdc>=0
    ?'<tr><td><span class="token-cell">'+usdcMark()+'<span><strong>USDC</strong><small class="muted">Arc gas token</small></span></span></td><td>'+count(d.usdc)+'</td><td>$1.00</td><td class="muted">\u2014</td><td>'+usd(d.usdc)+'</td><td>'+(valid(d.totals.usdcShare)?d.totals.usdcShare.toFixed(1)+'%':'\u2014')+'</td></tr>':'';
-  const rows=d.tokens.map(t=>'<tr><td><a class="token-cell" href="/token/'+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><small class="muted">'+esc(t.name||short(t.address))+'</small></span></a></td>'
-   +'<td>'+count(t.balance)+'</td><td>'+(t.price==null?'\u2014':price(t.price))+'</td><td class="'+color(t.change24h)+'">'+percent(t.change24h)+'</td><td>'+(t.value==null?'\u2014':usd(t.value))+'</td><td>'+(valid(t.share)?t.share.toFixed(1)+'%':'\u2014')+'</td></tr>').join('');
+  const rows=d.tokens.map(t=>'<tr><td><a class="token-cell" href="'+(t.listed?'/token/':'https://arc-scan.org/address/')+esc(t.address)+'">'+icon(t)+'<span><strong>'+esc(t.symbol||'?')+'</strong><small class="muted">'+esc(t.name||short(t.address))+'</small></span></a></td>'
+   +'<td title="'+esc(t.balanceExact??t.balanceRaw)+'">'+esc(walletAmount(t))+'</td><td>'+(t.price==null?'\u2014':price(t.price))+'</td><td class="'+color(t.change24h)+'">'+percent(t.change24h)+'</td><td>'+(t.value==null?'\u2014':usd(t.value))+'</td><td>'+(valid(t.share)?t.share.toFixed(1)+'%':'\u2014')+'</td></tr>').join('');
   // An explorer refusal is not an empty wallet, and saying so sent people looking for missing tokens.
-  $('wallet-rows').innerHTML=(usdcRow+rows)||'<tr><td colspan="6" class="empty">'+(d.errors?.tokens?'Could not read this wallet’s balances yet. Retrying…':'This address holds no tokens we can see.')+'</td></tr>';
-  $('wallet-note').textContent=d.stale?'Explorer delayed · showing the last balances read':d.errors?.tokens?'Balances unavailable right now · retrying':'Valued with the prices shown across the site';
-  walletLoaded=true;walletFailures=0;
+  $('wallet-rows').innerHTML=(usdcRow+rows)||'<tr><td colspan="6" class="empty">'+(d.pending?'Reading balances…':d.errors?.tokens?'Could not read this wallet’s balances yet. Retrying…':'This address holds no tokens we can see.')+'</td></tr>';
+  $('wallet-note').textContent=walletNotice(d);
+  walletLoaded=true;walletPending=!!d.pending;walletFailures=d.errors?walletFailures+1:0;
  }catch(e){
+  walletPending=false;
   walletFailures++;
   if(!walletLoaded)$('wallet-rows').innerHTML='<tr><td colspan="6" class="empty">Balances unavailable right now. Retrying…</td></tr>';
  }

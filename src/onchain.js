@@ -434,7 +434,10 @@ export async function readBurned(token,decimals,supplyRaw){
  const zero=await read('balanceOf',[BURN_ADDRESSES[1]]);
  const supply=await read('totalSupply')??rawSupply(supplyRaw);
  const burnedRaw=dead+(zero??0n);
- const scale=10**Number(decimals??18);
+ const decimalValue=decimals??await read('decimals');
+ if(decimalValue==null||!Number.isInteger(Number(decimalValue))||Number(decimalValue)<0||Number(decimalValue)>255)
+  return {burned:null,total:null,percent:null,deadPercent:supply>0n?Number(dead*10000000000n/supply)/100000000:null,circulating:null};
+ const scale=10**Number(decimalValue);
  const burned=Number(burnedRaw)/scale;
  const total=supply==null?null:Number(supply)/scale;
  return {burned,total,percent:total>0?burned/total*100:null,

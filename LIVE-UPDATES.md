@@ -1,5 +1,23 @@
 # Live updates
 
+## Progressive wallet balances (2026-09-15)
+
+- Wallet scans now use page/offset (100 per page), continue across bounded four-page passes, deduplicate contracts, and explicitly report pending/incomplete/error states. The [Etherscan-compatible holding endpoint](https://docs.etherscan.io/api-reference/endpoint/addresstokenbalance) documents these pagination parameters; Arcscan must support and serve them successfully for complete coverage.
+- Native USDC, ERC-20 pages and pricing no longer block one another. Cold responses wait at most 1 second for balance progress plus 750 ms for price lookup; these are application wait budgets, not measured production response times. Later requests share work and reuse a 30-second balance cache. Up to four source jobs run simultaneously. Native RPC rank probing was removed.
+- No top-market/list-page cap applies to pricing held assets. Unpriced and unknown-decimal holdings stay visible, tiny balances remain nonzero, exact decimal/raw quantities are retained, and native USDC is not counted again through its ERC-20 alias.
+- Address search offers the wallet link before token search completes; an exact token match still ranks before it when returned. Unknown tokens link to the explorer instead of an unavailable detail page.
+- Safety bounds: 100 cached wallets and 50,000 contracts per wallet. Hitting a bound or repeated page is explicitly incomplete, never a claim that all holdings were found. NFTs and other chains are outside this ERC-20/native view.
+- Live Arcscan testing returned Internal server error; the supplied Blockscout host returned 404. Therefore complete production balance coverage is not verified. A working compatible Arc endpoint can be configured with WALLET_EXPLORER_API. No Lighthouse/production latency benchmark was collected. Simulated pagination, failure recovery and browser tests cover the application behavior.
+
+## Live chart head (2026-09-15)
+
+- The live valuation packet, not the selected timeframe snapshot, owns current price and MC. A quiet SSE connection no longer expires this packet after 20 seconds.
+- The axis marker explicitly shows Latest / Last known valuation in every timeframe. Historical candle closes are not replaced with a quote: `withLivePrice` has been removed. If history differs from the current quote, a visible note explains the mismatch.
+- Confirmed same-pool executions are appended to immutable snapshots using a timestamp watermark and transaction/log deduplication. Secondary and unlabelled pools cannot enter this live overlay. Snapshots without pool provenance wait for a rebuild. Same-second boundary executions wait for the next snapshot to avoid double counting.
+- A separate bounded RPC head reader runs independently of archive backfills (maximum four flights, 3-second retry interval after success, 15-second backoff on failure). It retains the existing 12-block confirmation buffer. It starts with at most 2048 blocks; it is not an unlimited archival scan.
+- The live endpoint recovers a missing pool from stored discovery. Fresh primary-pool executions price the market and its verified supply-based valuation together; when supply is unknown, MC/FDV stay unknown rather than preserving an inconsistent number.
+- Tested with simulated six-frame changes, quiet SSE, duplicate trades and foreign-pool spikes. Production Coqui API confirmed missing live pool and lagging chart head. Direct public-RPC validation returned an HTTP failure; block-time latency and complete history across all tokens are not guaranteed. Rebuilds and provider/RPC availability still matter; no production deployment was performed.
+
 ## Stabilization pass (2026-09-15)
 
 - Older timestamped valuation packets cannot replace newer price/MC/pool packets in the detail UI.

@@ -41,6 +41,14 @@ test('only a real address is accepted',()=>{
  assert.equal(isAddress('0x123'),false);
  assert.equal(isAddress(''),false);
 });
+test('unknown decimals and tiny balances stay visible without a guessed scale',()=>{
+ const tiny=shapeHoldings([item(A,'1','18')])[0];assert.equal(tiny.balanceExact,'0.000000000000000001');
+ const unknown=shapeHoldings([item(B,'123456',null)])[0];assert.equal(unknown.balance,null);assert.equal(unknown.balanceRaw,'123456');
+});
+test('null prices remain unknown and USDC native alias is not double counted',()=>{
+ const rows=shapeHoldings([item(A,'1','0'),item(A,'2','0'),item('0x3600000000000000000000000000000000000000','1000000','6')],new Map([[A,{price:null}]]));
+ assert.equal(rows.length,1);assert.equal(rows[0].balance,2);assert.equal(rows[0].price,null);assert.equal(rows[0].value,null);
+});
 
 test('a holding carries what it did today and how much of the wallet it is',async()=>{
  const {walletHoldings}=await import('../src/wallet.js');

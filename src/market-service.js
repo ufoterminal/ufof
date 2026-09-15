@@ -33,6 +33,7 @@ function cachedBurn(row){
 export function burnFields(row){
  const burn=cachedBurn(row);
  return {deadBurnedPercent:burn?.deadPercent??null,burnLoading:!usableBurn(burn)&&burnFlights.has(row.address),
+  totalSupply:burn?.total??null,circulating:burn?.circulating??null,
   burned:burn&&burn.burned>=1?burn.burned:null,burnedPercent:burn&&burn.burned>=1?burn.percent:null};
 }
 const sources=new Set(Object.keys(SOURCES));
@@ -82,6 +83,11 @@ async function allMarkets(){
  }).finally(()=>{inflight=null;});return inflight;
 }
 const sum=(rows,key)=>{const vs=rows.map(r=>r[key]).filter(v=>v!=null);return vs.length?vs.reduce((a,b)=>a+b,0):null;};
+export async function marketPricesFor(addresses){
+ const wanted=new Set(addresses.map(a=>a.toLowerCase()));
+ if(!wanted.size)return new Map();
+ return new Map((await allMarkets()).filter(row=>wanted.has(row.address)).map(row=>[row.address,row]));
+}
 export function selectMarkets(all,options={},now=Math.floor(Date.now()/1000)){
  const query=String(options.q||'').trim().toLowerCase().slice(0,100);
  const active=r=>r.marketData&&(r.volume>0||r.lastTradeAt>now-86400);

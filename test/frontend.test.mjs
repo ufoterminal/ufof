@@ -88,7 +88,7 @@ test('launchpad labels use provenance, not the market data source',()=>{
 
 test('an address that is not a listed token is offered as a wallet',()=>{
  assert.ok(terminal.includes("href=\"/wallet/"),'search can lead to a wallet page');
- assert.ok(terminal.includes("!d.rows.some(t=>t.address===query.toLowerCase())"),'a token address still shows the token first');
+ assert.ok(terminal.includes('matchingToken?tokenRows+asWallet:asWallet+tokenRows'),'a token address still shows the token first');
  assert.ok(terminal.includes("id=\"wallet-rows\""),'the wallet page renders holdings');
 });
 
@@ -99,15 +99,15 @@ test('USDC carries its own mark on a wallet page',()=>{
 });
 
 test('search results are ranked by what a token is worth, not its unit price',()=>{
- const line=terminal.split('\n').find(l=>l.includes("search-results').innerHTML=asWallet"));
+ const line=terminal.split('\n').find(l=>l.includes('const tokenRows=d.rows.map'));
  assert.ok(line.includes('valid(t.marketCap)?usd(t.marketCap)'),'market cap is shown');
  assert.ok(!line.includes('price(t.price)'),'the unit price is not');
 });
 
-test('the open candle carries the price the header shows',()=>{
- assert.ok(terminal.includes('function withLivePrice('),'the helper exists');
- assert.ok(terminal.includes('withLivePrice(d.candles,t.price,TIMEFRAME_SECONDS[tf])'),'it is applied per timeframe');
- assert.ok(terminal.includes('updateSeries(candleSeries,(closing?[]:live)'),'the chart incrementally draws the adjusted series');
+test('live quotes are separate from execution-derived candle OHLC',()=>{
+ assert.ok(!terminal.includes('function withLivePrice('),'quotes cannot rewrite historical OHLC');
+ assert.ok(terminal.includes('appendLiveCandles(d.candles,d.history,'),'only provenance-checked trades update candles');
+ assert.ok(terminal.includes('currentChartValue(t,'),'all frames share the current quote marker');
 });
 
 test('chart colours are deep enough for the axis label to read white',()=>{

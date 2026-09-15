@@ -1,7 +1,9 @@
 import {q} from './db.js';
 import {directDetail,number} from './direct.js';
 import {mapMarket,burnFields} from './market-service.js';
-import {recentTrades} from './onchain.js';
+import {recentTrades,bestPool} from './onchain.js';
+import {liveChartHead} from './chart-engine.js';
+import {executionValuation} from './execution-valuation.js';
 import {crossQuote,nonUsdQuote} from './quote-values.js';
 const cache=new Map(),flights=new Set();
 export function windowStats(trades,now,complete=false){
@@ -20,6 +22,9 @@ export async function liveMarket(address){
  const row=(await q('SELECT t.*,l.launchpad_id FROM tokens t LEFT JOIN launches l ON l.token=t.address WHERE t.address=$1',[address]))[0];
  if(!row)return null;
  const market={...mapMarket(row),...burnFields(row)},old=cache.get(address);
+ const discovered=await bestPool(address).catch(()=>null);
+ market.pool=market.pool||row.metadata?.index_pool||discovered?.pool||null;
+ const descriptor=discovered?.pool?.toLowerCase()===market.pool?.toLowerCase()?discovered?.descriptor:(row.metadata?.index_pools||[]).find(p=>p.pool?.toLowerCase()===market.pool?.toLowerCase());
  if((!old||old.until<Date.now())&&!flights.has(address)&&flights.size<8){
   flights.add(address);
   directDetail(market.chartProvider||market.source,address,'1m',true).then(remote=>{
@@ -35,7 +40,10 @@ export async function liveMarket(address){
   market.marketCap=number(d.mcap)??market.marketCap;market.fdv=number(d.fdv)??market.fdv;
  }
  const protectedQuote=crossQuote(row.metadata)||nonUsdQuote(d?.quoteToken||d?.pairToken||d?.pair_token);
- const local=protectedQuote||!market.pool?[]:await recentTrades(address,100,market.pool).catch(()=>[]);
+ const indexed=protectedQuote||!market.pool?[]:await recentTrades(address,100,market.pool).catch(()=>[]);
+ const head=protectedQuote?[]:await liveChartHead(market.source,address,market.pool,descriptor).catch(()=>[]);
+ const local=head.length&&(!indexed.length||head[0].at>=indexed[0].at)?head:indexed;
+ Object.assign(market,executionValuation(market,local[0]));
  const provider=remote?.trades||[];
  const useLocal=local.length&&(!provider.length||local[0].at>=provider[0].at);
  const trades=useLocal?local:provider;
@@ -52,7 +60,7 @@ export async function liveMarket(address){
   market.recentBuyers=recent.buyers;market.recentSellers=recent.sellers;market.recentTradeCount=recent.transactions;
  }
  if(market.transactions==null&&market.buys!=null&&market.sells!=null)market.transactions=market.buys+market.sells;
- return {market,trades,pending:!old&&!local.length,lastTradeAt:trades[0]?.at||null,
+ return {market,trades,chartTrades:local,pending:!old&&!local.length,lastTradeAt:trades[0]?.at||null,
   receivedAt:old?.receivedAt||null,stale:!old||!!remote?.errors?.trades||Date.now()-old.receivedAt>20000,
   errors:remote?.errors||{},volumeBreakdown:market.buyVolume!=null&&market.sellVolume!=null?'24h':'unavailable'};
 }

@@ -7,6 +7,7 @@ import {nonUsdQuote} from './quote-values.js';
 
 const frames={'1m':60,'5m':300,'15m':900,'1h':3600,'4h':14400,'1d':86400};
 const flights=new Map();
+const headFlights=new Set(),headRetry=new Map();
 const hasPagedHistory=source=>!!SOURCES[source]?.history;
 let initialized;
 const init=()=>initialized??=q(`CREATE TABLE IF NOT EXISTS chart_trades(
@@ -50,6 +51,29 @@ async function save(source,token,rows){
  SELECT $1,$2,x.id,x.at,x.payload FROM jsonb_to_recordset($3::jsonb) AS x(id text,at bigint,payload jsonb)
  ON CONFLICT(source,token,id) DO UPDATE SET at=excluded.at,payload=excluded.payload`,
  [source,token,JSON.stringify(unique.slice(i,i+500).map(t=>({id:t.id,at:t.at,payload:t})))]);
+}
+// A bounded head reader, independent of expensive historical backfills.
+// Caller gets stored executions immediately; browser count cannot multiply RPC work.
+export async function liveChartHead(source,token,pool,descriptor){
+ await init();
+ if(!pool)return [];
+ const key=source+':head:'+pool.toLowerCase(),flight=key+':'+token;
+ const state=(await q('SELECT state FROM chart_sync WHERE source=$1 AND token=$2',[key,token]))[0]?.state||{};
+ if(!headFlights.has(flight)&&headFlights.size<4&&!(headRetry.get(flight)>Date.now())){
+  headFlights.add(flight);
+  poolHistory(token,pool,state,descriptor,{headOnly:true}).then(async result=>{
+   if(!result)return;
+   await save(key,token,result.trades);
+   await q(`INSERT INTO chart_sync(source,token,state) VALUES($1,$2,$3::jsonb)
+    ON CONFLICT(source,token) DO UPDATE SET state=excluded.state`,[key,token,JSON.stringify(result.state)]);
+   headRetry.set(flight,Date.now()+3000);
+  }).catch(()=>headRetry.set(flight,Date.now()+15000)).finally(()=>{
+   headFlights.delete(flight);if(headRetry.size>1000)headRetry.delete(headRetry.keys().next().value);
+  });
+ }
+ if(state.schema!==3)return [];
+ const rows=await q('SELECT payload FROM chart_trades WHERE source=$1 AND token=$2 ORDER BY at DESC LIMIT 500',[key,token]);
+ return rows.map(r=>r.payload).filter(t=>t.pool?.toLowerCase()===pool.toLowerCase()&&(t.generation||0)===(state.generation||0)).sort((a,b)=>b.at-a.at||(b.block||0)-(a.block||0)||(b.logIndex||0)-(a.logIndex||0));
 }
 async function sync(source,token,seed,poolAddress,descriptor){
  await init();
@@ -142,9 +166,12 @@ export async function ownChart(source,token,tf,remote,market={}){
  const boundary=!native&&!state.complete&&(remote.candles||[]).some(c=>c.bucket===first);
  const bootstrap=native?[]:(remote.candles||[]).filter(c=>first==null||c.bucket<first||(boundary&&c.bucket===first));
  const candles=continuousCandles([...bootstrap,...raw.filter(c=>!boundary||c.bucket!==first)]).slice(-500);
+ const tail=tape.filter(t=>t.at>=candles.at(-1)?.bucket);
+ const livePool=state.rpc?.pool&&tail.length&&tail.every(t=>t.pool?.toLowerCase()===state.rpc.pool.toLowerCase())?state.rpc.pool:null;
+ const lastTradeAt=tail.length?tail.reduce((n,t)=>Math.max(n,t.at),0):null;
  return {candles,closes:candles.map(c=>({bucket:c.bucket,value:c.close,volume:c.volume})),chartMode:'candles',
   trades:tape.sort((a,b)=>b.at-a.at).slice(0,100),
-  history:{engine:'local-trades-v1',openPolicy:'previous-recorded-close',complete:!!state.complete,records:tape.length,rpc:state.rpc||null,rpcError:state.rpcError||null,bootstrap:bootstrap.length>0,loading:flights.has(key)||(hasPagedHistory(source)&&!state.complete),from:tape.length?tape.reduce((n,t)=>Math.min(n,t.at),Infinity):null},
+  history:{engine:'local-trades-v1',pool:livePool,lastTradeAt,openPolicy:'previous-recorded-close',complete:!!state.complete,records:tape.length,rpc:state.rpc||null,rpcError:state.rpcError||null,bootstrap:bootstrap.length>0,loading:flights.has(key)||(hasPagedHistory(source)&&!state.complete),from:tape.length?tape.reduce((n,t)=>Math.min(n,t.at),Infinity):null},
   notice:failure?'History refresh unavailable; stored trades retained.':hasPagedHistory(source)&&!state.complete?'Earlier trade history is still loading.':bootstrap.length?'Earlier candles use provider history; recent candles are built from stored trades.':''};
 }
 export function continuousCandles(rows){
