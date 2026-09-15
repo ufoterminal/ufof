@@ -29,7 +29,7 @@ export function chartTrade(source,t){
  if(!Number.isSafeInteger(at)||at<=0||at>Date.now()/1000+60||!(price>0)||!Number.isFinite(price)||!(usd>0))return null;
  const id=String(t.id??(tx?JSON.stringify([tx,t.logIndex??t.log_index??null,at,price,usd,buy]):''));
  if(!id)return null;
- return {id,at,price,usd_volume:usd,buy,trader,tx,block:number(t.block),logIndex:number(t.logIndex??t.log_index),order:number(t.order)};
+ return {id,at,price,usd_volume:usd,buy,trader,tx,pool:t.pool||null,block:number(t.block),logIndex:number(t.logIndex??t.log_index),order:number(t.order)};
 }
 // The opening mark is the last known execution before the active bucket.
 // Include that mark in the range, unlike providers whose open lies outside
@@ -54,12 +54,12 @@ async function save(source,token,rows){
 }
 // A bounded head reader, independent of expensive historical backfills.
 // Caller gets stored executions immediately; browser count cannot multiply RPC work.
-export async function liveChartHead(source,token,pool,descriptor){
+export async function liveChartHead(source,token,pool,descriptor,refresh=true){
  await init();
  if(!pool)return [];
  const key=source+':head:'+pool.toLowerCase(),flight=key+':'+token;
  const state=(await q('SELECT state FROM chart_sync WHERE source=$1 AND token=$2',[key,token]))[0]?.state||{};
- if(!headFlights.has(flight)&&headFlights.size<4&&!(headRetry.get(flight)>Date.now())){
+ if(refresh&&!headFlights.has(flight)&&headFlights.size<4&&!(headRetry.get(flight)>Date.now())){
   headFlights.add(flight);
   poolHistory(token,pool,state,descriptor,{headOnly:true}).then(async result=>{
    if(!result)return;
@@ -75,7 +75,7 @@ export async function liveChartHead(source,token,pool,descriptor){
  const rows=await q('SELECT payload FROM chart_trades WHERE source=$1 AND token=$2 ORDER BY at DESC LIMIT 500',[key,token]);
  return rows.map(r=>r.payload).filter(t=>t.pool?.toLowerCase()===pool.toLowerCase()&&(t.generation||0)===(state.generation||0)).sort((a,b)=>b.at-a.at||(b.block||0)-(a.block||0)||(b.logIndex||0)-(a.logIndex||0));
 }
-async function sync(source,token,seed,poolAddress,descriptor){
+async function sync(source,token,seed,poolAddress,descriptor,providerPool){
  await init();
  let state=(await q('SELECT state FROM chart_sync WHERE source=$1 AND token=$2',[source,token]))[0]?.state||{};
  if(state.rpc&&state.rpc.schema!==3){state={...state,rpc:null,updated:0,rpcRetryAt:0};}
@@ -111,7 +111,8 @@ async function sync(source,token,seed,poolAddress,descriptor){
  const growth=Math.max(0,first.total-(state.total||first.total));
  if(growth>size){state.offset=0;state.complete=false;}
  else if(state.offset)state.offset=Math.max(size,state.offset+growth-size);
- await save(source,token,first.trades.map((t,i)=>chartTrade(source,{...t,order:first.total-i})));
+ const tagged=t=>source==='circlewarp'&&t.venue==='WarpDex'&&providerPool?{...t,pool:providerPool}:t;
+ await save(source,token,first.trades.map((t,i)=>chartTrade(source,{...tagged(t),order:first.total-i})));
  state.total=first.total;
  if(first.trades.length>=first.total){state.complete=true;state.offset=first.total;}
  else if(!state.complete){
@@ -120,7 +121,7 @@ async function sync(source,token,seed,poolAddress,descriptor){
   for(let n=0;n<8&&offset<first.total&&Date.now()-started<8000;n++){
    const d=await page(offset);if(!Array.isArray(d.trades)||!d.trades.length)break;
    const fingerprint=JSON.stringify(d.trades[0]);if(fingerprint===previous)throw Error('History pagination did not advance');previous=fingerprint;
-   await save(source,token,d.trades.map((t,i)=>chartTrade(source,{...t,order:(d.total??first.total)-offset-i})));offset+=d.trades.length;
+   await save(source,token,d.trades.map((t,i)=>chartTrade(source,{...tagged(t),order:(d.total??first.total)-offset-i})));offset+=d.trades.length;
   }
   // A provider that stops handing out older pages leaves the history short for good. Noting that here is
   // what lets the chain backfill take over instead of the chart simply beginning partway through.
@@ -146,7 +147,8 @@ export async function ownChart(source,token,tf,remote,market={}){
   const own=await bestPool(token).catch(()=>null);
   const poolAddress=market.pool||d.bestPool||d.pool_address||d.token?.pool_address||d.pool||own?.pool;
   const descriptor=(own?.pool?.toLowerCase()===poolAddress?.toLowerCase()?own?.descriptor:null)||(Array.isArray(d.pools)?d.pools.find(p=>p.pool?.toLowerCase()===poolAddress?.toLowerCase()):null);
-  if(!flights.has(key)&&flights.size<4)flights.set(key,sync(source,token,remote.trades||[],poolAddress,descriptor).finally(()=>flights.delete(key)));
+  const providerPool=source==='circlewarp'&&d.migrated&&d.pairAddress?.toLowerCase()===poolAddress?.toLowerCase()?poolAddress:null;
+  if(!flights.has(key)&&flights.size<4)flights.set(key,sync(source,token,remote.trades||[],poolAddress,descriptor,providerPool).finally(()=>flights.delete(key)));
   if(!flights.has(key))throw Error('History workers busy');
   let timer;
   try{state=await Promise.race([flights.get(key),new Promise(resolve=>{timer=setTimeout(()=>resolve(null),7000);})]);}
@@ -156,8 +158,18 @@ export async function ownChart(source,token,tf,remote,market={}){
  const stored=await q('SELECT payload FROM chart_trades WHERE source=$1 AND token=$2 ORDER BY at DESC LIMIT 100000',[source,token]);
  if(state.rpc?.schema!==3)state={...state,rpc:null};
  const rpcRows=state.rpc?await q('SELECT payload FROM chart_trades WHERE source=$1 AND token=$2 ORDER BY at DESC LIMIT 100000',[source+':rpc-v3',token]):[];
- const tape=stored.map(r=>r.payload).filter(t=>!state.rpc||t.at<=state.rpc.from||t.at>state.rpc.to)
+ const providerRows=stored.map(r=>r.payload),primary=market.pool?.toLowerCase();
+ const firstPrimary=providerRows.filter(t=>primary&&t.pool?.toLowerCase()===primary).reduce((n,t)=>Math.min(n,t.at),Infinity);
+ const tape=providerRows.filter(t=>!primary||t.pool?.toLowerCase()===primary||(!t.pool&&t.at<firstPrimary))
+  .filter(t=>!state.rpc||t.at<=state.rpc.from||(t.at>state.rpc.to&&t.pool?.toLowerCase()===state.rpc.pool?.toLowerCase()))
   .concat(rpcRows.map(r=>r.payload).filter(t=>t.at>state.rpc.from&&t.pool===state.rpc.pool&&(t.generation||0)===(state.rpc.generation||0)));
+ // Reuse the worker's primary-pool head across all frames. Do not splice newer
+ // unlabelled provider executions over the canonical pool's tail.
+ if(state.rpc?.pool){
+  const head=await liveChartHead(source,token,state.rpc.pool,null,false);
+  const last=tape.reduce((n,t)=>Math.max(n,t.at),0);
+  tape.push(...head.filter(t=>t.at>=last));
+ }
  const raw=buildCandles(tape,seconds);
  const native=hasPagedHistory(source)||source==='dyor'&&!remote.candles?.length;
  // Other providers retain their earlier history until the local tape covers it.
@@ -167,11 +179,13 @@ export async function ownChart(source,token,tf,remote,market={}){
  const bootstrap=native?[]:(remote.candles||[]).filter(c=>first==null||c.bucket<first||(boundary&&c.bucket===first));
  const candles=continuousCandles([...bootstrap,...raw.filter(c=>!boundary||c.bucket!==first)]).slice(-500);
  const tail=tape.filter(t=>t.at>=candles.at(-1)?.bucket);
- const livePool=state.rpc?.pool&&tail.length&&tail.every(t=>t.pool?.toLowerCase()===state.rpc.pool.toLowerCase())?state.rpc.pool:null;
+ const selectedPool=state.rpc?.pool||market.pool;
+ const livePool=selectedPool&&tail.length&&tail.every(t=>t.pool?.toLowerCase()===selectedPool.toLowerCase())?selectedPool:null;
  const lastTradeAt=tail.length?tail.reduce((n,t)=>Math.max(n,t.at),0):null;
  const lastExecution=tail.filter(t=>t.at===lastTradeAt).sort((a,b)=>(b.block??0)-(a.block??0)||(b.logIndex??0)-(a.logIndex??0))[0];
  const lastTradeCursor=livePool&&Number.isSafeInteger(lastExecution?.block)&&Number.isSafeInteger(lastExecution?.logIndex)?{at:lastExecution.at,block:lastExecution.block,logIndex:lastExecution.logIndex}:null;
  return {candles,closes:candles.map(c=>({bucket:c.bucket,value:c.close,volume:c.volume})),chartMode:'candles',
+  frameCandles:bootstrap.length?null:Object.fromEntries(Object.entries(frames).map(([frame,step])=>[frame,buildCandles(tape,step).slice(-500)])),
   trades:tape.sort((a,b)=>b.at-a.at).slice(0,100),
   history:{engine:'local-trades-v1',pool:livePool,lastTradeAt,lastTradeCursor,openPolicy:'previous-recorded-close',complete:!!state.complete,records:tape.length,rpc:state.rpc||null,rpcError:state.rpcError||null,bootstrap:bootstrap.length>0,loading:flights.has(key)||(hasPagedHistory(source)&&!state.complete),from:tape.length?tape.reduce((n,t)=>Math.min(n,t.at),Infinity):null},
   notice:failure?'History refresh unavailable; stored trades retained.':hasPagedHistory(source)&&!state.complete?'Earlier trade history is still loading.':bootstrap.length?'Earlier candles use provider history; recent candles are built from stored trades.':''};

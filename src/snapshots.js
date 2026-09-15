@@ -31,6 +31,20 @@ export async function claimJob(){
  ORDER BY priority DESC,next_at ASC,token,tf LIMIT 1 FOR UPDATE SKIP LOCKED)
  RETURNING *`,[now+180000,now]))[0];
 }
+export async function publishFrameSet(token,tf,payload){
+ const {frameCandles,...base}=payload||{};
+ if(!frameCandles)return publishSnapshot(token,tf,base);
+ const rows=frames.map(frame=>({tf:frame,candles:frameCandles[frame]}));
+ if(rows.some(r=>!r.candles?.length))throw Error('Incomplete timeframe set');
+ await initSnapshots();const updated=Date.now();
+ const records=rows.map(r=>({tf:r.tf,payload:{...base,timeframe:r.tf,candles:r.candles,closes:r.candles.map(c=>({bucket:c.bucket,value:c.close,volume:c.volume})),generation:updated}}));
+ // One statement publishes all six frames from one tape, never six mixed generations.
+ await q(`INSERT INTO market_snapshots_v3(token,tf,payload,updated)
+ SELECT $1,x.tf,x.payload,$3 FROM jsonb_to_recordset($2::jsonb) AS x(tf text,payload jsonb)
+ ON CONFLICT(token,tf) DO UPDATE SET payload=excluded.payload,updated=excluded.updated`,[token,JSON.stringify(records),updated]);
+ await q('UPDATE market_jobs_v3 SET next_at=$2,priority=0 WHERE token=$1 AND lease_until<$3',[token,updated+15000,updated]);
+ for(const frame of frames)marketEvents.emit('changed',{token,tf:frame});
+}
 export async function finishJob(job,error){
  const delay=error?Math.min(300000,15000*2**Math.min(job.failures,4)):job.priority>0?15000:120000;
  await q(`UPDATE market_jobs_v3 SET lease_until=0,next_at=$3,priority=0,failures=$4,error=$5 WHERE token=$1 AND tf=$2`,[job.token,job.tf,Date.now()+delay,error?job.failures+1:0,error||null]);

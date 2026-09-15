@@ -17,7 +17,7 @@ export function createEventStream(readLive,events,{interval=1500,maxClients=250,
     try{
      const data=await readLive(token);if(closed||topics.get(token)!==state)continue;
      // Transport timestamps alone are not new market data.
-     const hash=JSON.stringify(data&&{...data,receivedAt:null});
+     const hash=JSON.stringify(data&&{...data,receivedAt:null,packetAt:null});
      if(hash!==state.hash){state.hash=hash;state.data=data;for(const c of clients)if(c.token===token)send(c,'live',data);}
     }catch{for(const c of clients)if(c.token===token)send(c,'feed-error',{});}
    }

@@ -16,6 +16,7 @@ import {walletHoldings} from './wallet.js';
 import {liveMarket} from './live-market.js';
 import {marketEvents} from './market-events.js';
 import {createEventStream} from './event-stream.js';
+import {liveStoreStatus} from './live-store.js';
 const app=express(),root=path.dirname(fileURLToPath(import.meta.url));
 app.disable('x-powered-by');
 const stream=createEventStream(liveMarket,marketEvents);
@@ -44,7 +45,7 @@ app.get('/api/wallet/:address',route(async(req,res)=>{
  res.json(await walletHoldings(req.params.address,marketPricesFor));
 }));
 app.get('/api/onchain',route(async(_,res)=>res.json({...await onchainStatus(),metadata:await metadataStatus(),retention:await retentionStatus()})));
-app.get('/api/indexer',route(async(_,res)=>res.json(await snapshotStatus())));
+app.get('/api/indexer',route(async(_,res)=>res.json({...await snapshotStatus(),live:await liveStoreStatus()})));
 app.get('/api/markets',route(async(req,res)=>res.json({...await listMarkets(req.query),status})));
 app.get('/api/screener',route(async(req,res)=>res.json({...await listMarkets(req.query),status})));
 app.get('/api/search',route(async(req,res)=>res.json(await listMarkets({...req.query,mode:'all',limit:50}))));

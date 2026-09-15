@@ -6,6 +6,8 @@ import {liveChartHead} from './chart-engine.js';
 import {executionValuation} from './execution-valuation.js';
 import {crossQuote,nonUsdQuote} from './quote-values.js';
 import {sharedLive} from './shared-live.js';
+import {requestLive,readLivePacket} from './live-store.js';
+import {primaryPool} from './primary-pool.js';
 const cache=new Map(),flights=new Set();
 export function windowStats(trades,now,complete=false){
  if(!complete&&!trades.some(t=>t.at<=now-86400))return null;
@@ -18,14 +20,22 @@ export function windowStats(trades,now,complete=false){
  const sum=a=>a.reduce((n,t)=>n+Number(t.usd_volume),0),unique=a=>new Set(a.map(t=>t.trader).filter(Boolean)).size;
  return {buyVolume:sum(buys),sellVolume:sum(sells),volume:sum(rows),buys:buys.length,sells:sells.length,transactions:rows.length,traders:unique(rows),buyers:unique(buys),sellers:unique(sells)};
 }
-export const liveMarket=sharedLive(readLiveMarket);
-async function readLiveMarket(address){
+export const liveMarket=sharedLive(async address=>{
+ address=address.toLowerCase();
+ const packet=await readLivePacket(address);if(packet){await requestLive(address);return packet;}
+ const row=(await q('SELECT t.*,l.launchpad_id FROM tokens t LEFT JOIN launches l ON l.token=t.address WHERE t.address=$1',[address]))[0];
+ if(!row)return null;
+ await requestLive(address);
+ return {market:mapMarket(row),trades:[],chartTrades:[],pending:true,stale:true,errors:{}};
+});
+// Only the background worker calls this collector. HTTP and SSE read live_packets.
+export async function collectLiveMarket(address){
  address=address.toLowerCase();
  const row=(await q('SELECT t.*,l.launchpad_id FROM tokens t LEFT JOIN launches l ON l.token=t.address WHERE t.address=$1',[address]))[0];
  if(!row)return null;
  const market={...mapMarket(row),...burnFields(row)},old=cache.get(address);
  const discovered=await bestPool(address).catch(()=>null);
- market.pool=market.pool||row.metadata?.index_pool||discovered?.pool||null;
+ market.pool=primaryPool(row.metadata?.index_pools||[],row.metadata?.index_pool||market.pool||discovered?.pool||null);
  const descriptor=discovered?.pool?.toLowerCase()===market.pool?.toLowerCase()?discovered?.descriptor:(row.metadata?.index_pools||[]).find(p=>p.pool?.toLowerCase()===market.pool?.toLowerCase());
  if((!old||old.until<Date.now())&&!flights.has(address)&&flights.size<8){
   flights.add(address);
@@ -37,14 +47,16 @@ async function readLiveMarket(address){
   }).catch(()=>{if(old)old.until=Date.now()+10000;}).finally(()=>flights.delete(address));
  }
  const remote=old?.remote,d=remote?.detail;
- if(number(d?.price)>0){market.price=number(d.price);market.priceAt=d.priceAt||null;
+ if(number(d?.price)>0&&(!d.bestPool||d.bestPool.toLowerCase()===market.pool?.toLowerCase())){market.price=number(d.price);market.priceAt=d.priceAt||null;
   // Keep valuation packets coherent; never calculate a missing supply.
   market.marketCap=number(d.mcap)??market.marketCap;market.fdv=number(d.fdv)??market.fdv;
  }
  const protectedQuote=crossQuote(row.metadata)||nonUsdQuote(d?.quoteToken||d?.pairToken||d?.pair_token);
  const indexed=protectedQuote||!market.pool?[]:await recentTrades(address,100,market.pool).catch(()=>[]);
  const head=protectedQuote?[]:await liveChartHead(market.source,address,market.pool,descriptor).catch(()=>[]);
- const local=head.length&&(!indexed.length||head[0].at>=indexed[0].at)?head:indexed;
+ const chain=head.length&&(!indexed.length||head[0].at>=indexed[0].at)?head:indexed;
+ const sourcePoolTrades=(remote?.trades||[]).filter(t=>t.pool&&t.pool.toLowerCase()===market.pool?.toLowerCase());
+ const local=sourcePoolTrades.length&&(!chain.length||sourcePoolTrades[0].at>chain[0].at)?sourcePoolTrades:chain;
  Object.assign(market,executionValuation(market,local[0]));
  const provider=remote?.trades||[];
  const useLocal=local.length&&(!provider.length||local[0].at>=provider[0].at);

@@ -398,7 +398,9 @@ export async function directDetail(source,address,tf='1h',liveOnly=false){
   const base='https://warp-arc-production.up.railway.app/api/tokens/'+address;
   const results=await Promise.all([read('detail',base),Promise.resolve([]),read('trades',base+'/trades?limit=100&offset=0')]);
   detail=results[0];chart=Array.isArray(results[1])?results[1]:results[1]?.candles||[];
-  swaps=(results[2]?.trades||[]).map(s=>({at:unix(s.ts),buy:String(s.side).toLowerCase()==='buy',usd_volume:number(s.usdc),price:number(s.price),trader:s.wallet,tx:s.txHash}));
+  if(detail?.address&&detail.address.toLowerCase()!==address.toLowerCase())throw Error('Token address mismatch');
+  if(detail?.migrated&&/^0x[0-9a-f]{40}$/i.test(detail.pairAddress||''))detail={...detail,bestPool:detail.pairAddress.toLowerCase()};
+  swaps=(results[2]?.trades||[]).map(s=>({id:s.id,pool:s.venue==='WarpDex'?detail?.bestPool:null,at:unix(s.ts),buy:String(s.side).toLowerCase()==='buy',usd_volume:number(s.usdc),price:number(s.price),trader:s.wallet,tx:s.txHash}));
  }else if(source==='archemist'){
   const base='https://api.archemist.fun/api/tokens/'+address;
   const results=await Promise.all([read('detail',base+'?chain=arc-mainnet'),read('chart',base+'/chart?chain=arc-mainnet&tf='+seconds+'&limit=500'),read('trades',base+'/trades?chain=arc-mainnet&limit=100')]);

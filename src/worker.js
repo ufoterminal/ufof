@@ -1,6 +1,6 @@
 import {init,q,pool} from './db.js';
 import {buildMarket} from './market-service.js';
-import {frames,requestSnapshot,claimJob,finishJob,publishSnapshot,initSnapshots} from './snapshots.js';
+import {frames,requestSnapshot,claimJob,finishJob,publishFrameSet,initSnapshots} from './snapshots.js';
 import {drainHolderMaps,seedHolderMaps} from './holder-map.js';
 import {scanPadsInBackground} from './pad-registry.js';
 import {readPadMetadata,readDiscoveredMetadata} from './token-metadata.js';
@@ -8,6 +8,8 @@ import {runRetention} from './retention.js';
 import {onchainSync,findPoolsFor,tokensMissingPools} from './onchain.js';
 import {namePadLaunches} from './direct.js';
 import {refreshRegistryInBackground} from './argus.js';
+import {collectLiveMarket} from './live-market.js';
+import {claimLive,finishLive,seedLive} from './live-store.js';
 let stopped=false;
 export async function seedJobs(){
  await initSnapshots();
@@ -27,11 +29,18 @@ export function startWorker(){
  const later=(fn,ms)=>{if(stopped)return;const timer=setTimeout(()=>{timers.delete(timer);fn();},ms);timers.add(timer);timer.unref();};
  async function run(){
   let job;
-  try{job=await claimJob();if(job){try{await publishSnapshot(job.token,job.tf,await buildMarket(job.token,job.tf));await finishJob(job,null);}catch(e){await finishJob(job,e.shortMessage||e.message);}}}
+  try{job=await claimJob();if(job){try{await publishFrameSet(job.token,job.tf,await buildMarket(job.token,job.tf));await finishJob(job,null);}catch(e){await finishJob(job,e.shortMessage||e.message);}}}
   catch(e){console.error('[worker]',e.message);}
   later(run,job?100:1000);
  }
- async function seed(){try{await seedJobs();await seedHolderMaps();}catch(e){console.error('[seed]',e.message);}later(seed,60000);}
+ async function seed(){try{await seedJobs();await seedHolderMaps();await seedLive();}catch(e){console.error('[seed]',e.message);}later(seed,60000);}
+ async function live(){
+  let job;
+  try{job=await claimLive();if(job){try{await finishLive(job.token,await collectLiveMarket(job.token),null);}catch(e){await finishLive(job.token,null,e.message);}}}
+  catch(e){console.error('[live-worker]',e.message);}
+  later(live,job?100:500);
+ }
+ live();live();
  // Holder maps are filled a few windows at a time between snapshot jobs.
  async function maps(){
   let worked=false;

@@ -8,6 +8,10 @@ import {readBurned,recentTrades} from './onchain.js';
 import {launchMeta} from './argus.js';
 import {crossQuote,nonUsdQuote} from './quote-values.js';
 import {marketEvents} from './market-events.js';
+import {initLiveStore,requestLive,readLivePacket} from './live-store.js';
+import {mergeLiveMarket} from '../public/live-candles.js';
+import {primaryPool} from './primary-pool.js';
+import {executionValuation} from './execution-valuation.js';
 marketEvents.on('changed',()=>invalidateMarkets());
 let snapshot=null,until=0,inflight=null;
 // Slow supply RPCs must not hold up a fresh transaction/chart snapshot.
@@ -16,10 +20,10 @@ const warmed=new Map();
 // A reading counts once the burned amount is known. Tying it to the dead-address share alone threw away
 // readings whose total supply the RPC refused, which is the same refusal that leaves the panel empty.
 const usableBurn=v=>Number.isFinite(v?.burned)||Number.isFinite(v?.deadPercent);
-function cachedBurn(row){
+function cachedBurn(row,refresh=true){
  const key=row.address,stored=row.metadata?.burn_reading;
  const hit=burnValues.get(key)||(stored?.value?{value:stored.value,until:Number(stored.at)+60000}:null);
- if((!hit||hit.until<Date.now())&&!burnFlights.has(key)&&burnFlights.size<4){
+ if(refresh&&(!hit||hit.until<Date.now())&&!burnFlights.has(key)&&burnFlights.size<4){
   burnFlights.add(key);
   readBurned(key,row.decimals,row.total_supply).then(async value=>{
    if(burnValues.size>=1000)burnValues.delete(burnValues.keys().next().value);
@@ -30,8 +34,8 @@ function cachedBurn(row){
  }
  return hit?.value||null;
 }
-export function burnFields(row){
- const burn=cachedBurn(row);
+export function burnFields(row,refresh=true){
+ const burn=cachedBurn(row,refresh);
  return {deadBurnedPercent:burn?.deadPercent??null,burnLoading:!usableBurn(burn)&&burnFlights.has(row.address),
   totalSupply:burn?.total??null,circulating:burn?.circulating??null,
   burned:burn&&burn.burned>=1?burn.burned:null,burnedPercent:burn&&burn.burned>=1?burn.percent:null};
@@ -74,12 +78,14 @@ export function withPreparedPrice(market,prepared,preparedAt,metadata,now=Date.n
 }
 async function allMarkets(){
  await initSnapshots();
+ await initLiveStore();
  if(snapshot&&until>Date.now())return snapshot;
  if(inflight)return inflight;
- inflight=q(`SELECT t.*,l.launchpad_id,s.payload AS prepared,s.updated AS prepared_at FROM tokens t LEFT JOIN launches l ON l.token=t.address
+ inflight=q(`SELECT t.*,l.launchpad_id,s.payload AS prepared,s.updated AS prepared_at,p.payload AS live_packet,p.updated AS live_at FROM tokens t LEFT JOIN launches l ON l.token=t.address
+ LEFT JOIN live_packets p ON p.token=t.address
  LEFT JOIN LATERAL (SELECT payload,updated FROM market_snapshots_v3 WHERE token=t.address ORDER BY updated DESC LIMIT 1) s ON true
  WHERE (t.metadata->>'feed_schema'='2' OR t.metadata->>'catalog_schema'='2')`).then(rows=>{
-  snapshot=rows.map(r=>withPreparedPrice(mapMarket(r),r.prepared,r.prepared_at,r.metadata));until=Date.now()+10000;return snapshot;
+  snapshot=rows.map(r=>r.live_packet?.market?mergeLiveMarket(mapMarket(r),r.live_packet.market):withPreparedPrice(mapMarket(r),r.prepared,r.prepared_at,r.metadata));until=Date.now()+2000;return snapshot;
  }).finally(()=>{inflight=null;});return inflight;
 }
 const sum=(rows,key)=>{const vs=rows.map(r=>r[key]).filter(v=>v!=null);return vs.length?vs.reduce((a,b)=>a+b,0):null;};
@@ -175,7 +181,7 @@ export async function buildMarket(address,tf='1h'){
   market.quoteToken=d.quoteToken||market.quoteToken;
   market.liquidity=number(dt.liquidityUsdc??dt.liquidity??d.liquidityUsd??d.live?.liquidity)??market.liquidity;
   market.buys=number(d.buys24??d.buys24h)??market.buys;market.sells=number(d.sells24??d.sells24h)??market.sells;
-  market.pool=d.bestPool||dt.pool||market.pool;
+  market.pool=primaryPool(d.pools||savedPools,d.bestPool||savedPool||dt.pool||market.pool);
   if(market.pool&&(market.pool!==savedPool||Array.isArray(d.pools))){
    await q(`UPDATE tokens SET metadata=metadata||$2::jsonb WHERE address=$1`,[address.toLowerCase(),JSON.stringify({index_pool:market.pool,index_pools:d.pools||savedPools})]);
   }
@@ -203,12 +209,16 @@ export async function buildMarket(address,tf='1h'){
  const tape=nonUsdQuote(market.quoteToken)||crossQuote(row.metadata)||!market.pool?[]:await recentTrades(address,100,market.pool).catch(()=>[]);
  const fromProvider=remote?.trades||[];
  const trades=(tape.length&&(!fromProvider.length||(tape[0]?.at||0)>=(fromProvider[0]?.at||0)))?tape:fromProvider;
+ // Display the primary pool's last execution, not a reserve spot quote next to
+ // an execution-based chart. Supply and price move as one valuation packet.
+ const primaryTrade=trades.find(t=>t.pool?.toLowerCase()===market.pool?.toLowerCase());
+ if(primaryTrade)Object.assign(market,executionValuation({...market,...burnFields(row)},primaryTrade));
  if(trades[0]?.at)market.lastTradeAt=validTime(trades[0].at)||market.lastTradeAt;
  // The price is not taken from the last candle. Each timeframe's snapshot is prepared at its own moment,
  // so reading the price off the chart made the same token show a different price on 1m than on 1d, and
  // the market cap scale with it. The figure comes from the market row and is refreshed when served.
  return {market,timeframe:tf,candles:remote?.candles||[],closes:remote?.closes||[],chartMode:remote?.chartMode||'candles',history:remote?.history,trades,errors:remote?.errors||{detail:error},
-  supported:!!remote,receivedAt:Math.floor(Date.now()/1000)};
+  frameCandles:remote?.frameCandles||null,supported:!!remote,receivedAt:Math.floor(Date.now()/1000)};
 }
 
 // What a snapshot holds of its own timeframe stays; what the market is worth right now comes from the
@@ -231,15 +241,8 @@ export function withLiveFigures(market,row){
 // Rebuilds in the background, one per token and timeframe at a time.
 const rebuilding=new Set();
 function refreshDetail(address,tf){
- const key=address+':'+tf;
- if(rebuilding.has(key)||rebuilding.size>6)return;
- rebuilding.add(key);
- // The rebuilt payload has to be stored, or the page keeps reading the same old snapshot: the work was
- // being done and thrown away, which is why a token page could sit on transactions from ten minutes ago
- // however often it polled.
- buildMarket(address,tf)
-  .then(payload=>payload&&publishSnapshot(address,tf,payload))
-  .catch(()=>null).finally(()=>rebuilding.delete(key));
+ // Web requests enqueue only; shared database leases coordinate workers.
+ return requestSnapshot(address,tf,10);
 }
 
 export async function getMarket(address,tf='1h'){
@@ -247,18 +250,12 @@ export async function getMarket(address,tf='1h'){
  address=address.toLowerCase();
  let row=(await q('SELECT t.*,l.launchpad_id FROM tokens t LEFT JOIN launches l ON l.token=t.address WHERE t.address=$1',[address]))[0];
  if(!row)return null;
+ await requestLive(address);
+ const live=await readLivePacket(address);
  // A token nothing has described yet is named here, once. Naming runs in the background newest first, so
  // an older launch could sit unnamed for a long time: it could not be found by its name and it sorted to
  // the bottom of every list, which reads as the token being missing rather than merely unlabelled.
- if(!String(row.symbol||'').trim()){
-  const meta=await launchMeta(address).catch(()=>null);
-  if(meta?.symbol){
-   await q('UPDATE tokens SET name=$2,symbol=$3,decimals=COALESCE(decimals,$4) WHERE address=$1',
-    [address,meta.name||'',meta.symbol,meta.decimals??null]).catch(()=>null);
-   row={...row,name:meta.name||row.name,symbol:meta.symbol,decimals:row.decimals??meta.decimals??null};
-   invalidateMarkets();
-  }
- }
+ // Naming is performed by the registry worker, never by a page request.
  const warmKey=address+':'+tf;
  if(!(warmed.get(warmKey)>Date.now())){
  if(warmed.size>=1000)warmed.delete(warmed.keys().next().value);
@@ -279,13 +276,14 @@ export async function getMarket(address,tf='1h'){
  // even though the candles were already in the database; the page polls, so the fresh build arrives on its
  // own a moment later.
  if(saved){
-  if(stale)refreshDetail(address,tf);
-  return {...saved.payload,market:withLiveFigures(saved.payload.market,row),
+  if(stale)await refreshDetail(address,tf);
+  return {...saved.payload,market:mergeLiveMarket(withLiveFigures(saved.payload.market,row),live?.market),
+   trades:live?.trades?.length?live.trades:saved.payload.trades,
    cache:{updatedAt:saved.updated,stale:age>60000}};
  }
- refreshDetail(address,tf);
+ await refreshDetail(address,tf);
  // The burn is read from the token, not from the snapshot being prepared, so the first paint carries it
  // rather than leaving the panel empty until the build lands.
- return {market:{...mapMarket(row),...burnFields(row)},timeframe:tf,candles:[],closes:[],trades:[],chartMode:'candles',supported:true,
+ return {market:mergeLiveMarket({...mapMarket(row),...burnFields(row,false)},live?.market),timeframe:tf,candles:[],closes:[],trades:live?.trades||[],chartMode:'candles',supported:true,
  history:{loading:true,complete:false},errors:{chartNotice:'Historical data is being prepared in the background.'},cache:{pending:true}};
 }

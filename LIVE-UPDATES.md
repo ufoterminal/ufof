@@ -1,5 +1,18 @@
 # Live updates
 
+## Worker-owned live packets and coherent timeframes (2026-09-15)
+
+- `/api/live`, SSE, and token-detail reads no longer run the live collector or start direct chart rebuilds. They read persisted `live_packets` and enqueue unique database jobs. Missing token names are left to the registry worker. Wallet and holder endpoints remain separate on-demand readers.
+- Two bounded live worker loops refresh interested tokens, with shared database leases and last-good packet retention. The highest-volume 32 markets are warmed without visitors. The default embedded worker starts automatically with `npm start`; external worker mode requires a shared PostgreSQL database and a running `npm run worker`. PGlite remains single-process.
+- Homepage and detail valuations consume the same stored live market packet. Complete per-frame sets derived from one stored tape publish atomically with one generation; provider-bootstrap histories retain the existing per-frame fallback until sufficient tape exists.
+- Empty time buckets carry the last execution at zero volume with an explicit empty flag. No fake transactions are created. The viewport uses the displayed bar count.
+- Liquidity-bearing pool descriptors select a primary pool with a 10% switching margin; absent comparable liquidity, a declared/previous pool is retained. This is not a claim of fresh on-chain liquidity coverage for every pool.
+- Warp's first-party detail explicitly identifies its migrated pair. Only trades labelled WarpDex receive that pair's provenance; other venues cannot enter the primary-pool tail. A source-reported pool label is not an independent RPC verification.
+- Last primary-pool execution prices the market overview and its valuation; a different reserve spot quote is not substituted merely because a token has been inactive for three minutes. Unknown circulating supply remains unknown.
+- `scripts/verify-live-warp.mjs` uses an isolated in-memory database and live first-party data. Verification produced 898 stored executions, six equal closes and equal displayed price. Archive coverage was still partial; this was not an all-token production test.
+- Live RPC probes: Arcscan/Thirdweb returned eth_call errors, Blockdaemon required authorization, the supplied Infura project reported quota exceeded, and the supplied Blockscout route returned 404. These outages were not bypassed. No new dependency on ARC Screener's API was introduced.
+- Performance skill used for request-path inspection; no DevTools trace/Lighthouse measurement or public load-capacity certification was collected. No production deployment or user database deletion occurred.
+
 ## Shared live reads and same-second candle updates (2026-09-15)
 
 - HTTP fallback and SSE now share the complete per-token live computation, including database reads, with a one-second result cache and bounded concurrent computations. This is process-local; it is not a distributed indexer migration.

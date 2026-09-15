@@ -2,9 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 process.env.DATA_DIR='memory://';delete process.env.DATABASE_URL;
 const {init,pool,q}=await import('../src/db.js');
-const {requestSnapshot,readSnapshot,publishSnapshot,claimJob,finishJob}=await import('../src/snapshots.js');
+const {requestSnapshot,readSnapshot,publishSnapshot,publishFrameSet,claimJob,finishJob}=await import('../src/snapshots.js');
 const {getMarket}=await import('../src/market-service.js');
 test.after(()=>pool.end());
+test('all six frames publish one generation from one tape without storing duplicate bundles',async()=>{
+ await init();const token='0x'+'c'.repeat(40);
+ const frameCandles=Object.fromEntries(['1m','5m','15m','1h','4h','1d'].map(tf=>[tf,[{bucket:86400,open:1,high:2,low:1,close:2,volume:5}]]));
+ await publishFrameSet(token,'1m',{market:{address:token,price:2},frameCandles});
+ const rows=await Promise.all(Object.keys(frameCandles).map(tf=>readSnapshot(token,tf)));
+ assert.equal(new Set(rows.map(r=>r.updated)).size,1);
+ assert.equal(new Set(rows.map(r=>r.payload.generation)).size,1);
+ assert.ok(rows.every(r=>r.payload.candles.at(-1).close===2&&!r.payload.frameCandles));
+ await assert.rejects(publishFrameSet(token,'1m',{frameCandles:{'1m':frameCandles['1m']}}));
+ assert.equal((await readSnapshot(token,'1d')).payload.candles.at(-1).close,2);
+});
 test('snapshot requests never fetch upstream; queue is persistent and failed refresh retains candles',async()=>{
  await init();const token='0x'+'a'.repeat(40);
  await q('INSERT INTO tokens(address,name,symbol) VALUES($1,$2,$3)',[token,'Test','TEST']);

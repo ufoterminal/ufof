@@ -2,6 +2,7 @@ import {SOURCES,VENUES,LAUNCHPADS,launchpadId} from './sources.js';
 import {retainValuation} from './market-state.js';
 import {appendLiveCandles,mergeLiveMarket,currentChartValue} from './live-candles.js';
 import {walletAmount,walletNotice} from './wallet-ui.js';
+import {fillChartGaps} from './chart-gaps.js';
 import {updateSeries,reconcileTrades,updateMarketRows,burnText,burnParts,syncNotice,retainBurnReading} from './live-ui.js';
 import {esc,valid,price,compactPrice,chartPrice,usd,count,percent,color,short,age,date,since,safeUrl,icon,spark} from './ui-utils.js';
 const $=id=>document.getElementById(id),app=$('app'),params=new URLSearchParams(location.search);
@@ -209,7 +210,7 @@ function paintDetail(d){
  if(window.LightweightCharts){setupChart();
  const scale=chartScale(t),k=scale.factor,fmt=scale.format;
  document.querySelectorAll('[data-scale]').forEach(x=>x.classList.toggle('active',x.dataset.scale===scaleMode));
- const live=appendLiveCandles(d.candles,d.history,[...chartTape.values()],TIMEFRAME_SECONDS[tf],t.pool);
+ const live=fillChartGaps(appendLiveCandles(d.candles,d.history,[...chartTape.values()],TIMEFRAME_SECONDS[tf],t.pool),TIMEFRAME_SECONDS[tf]);
  const current=currentChartValue(t,scale.label==='Market cap'?'mc':'price');
  const delayed=!liveData||liveData.stale||(!streamHealthy&&Date.now()-liveAt>20000);
  const mark={price:current??0,axisLabelVisible:current!=null,lineVisible:current!=null,title:delayed?'Last known':'Latest'};
@@ -225,7 +226,7 @@ function paintDetail(d){
   updateSeries(lineSeries,closing?(d.closes||[]).map(c=>({time:c.bucket,value:c.value*k})):(lineOnly?live.map(c=>({time:c.bucket,value:c.close*k})):[]),chartTokenTf!==tf);
   updateSeries(candleSeries,(closing?[]:live).map(c=>({time:c.bucket,open:c.open*k,high:c.high*k,low:c.low*k,close:c.close*k})),chartTokenTf!==tf);
   updateSeries(volumeSeries,(closing?d.closes:live).filter(c=>valid(c.volume)&&c.volume>=0).map(c=>({time:c.bucket,value:c.volume,color:closing?'#36588280':c.close>=c.open?'#23856c65':'#af435665'})),chartTokenTf!==tf);
-  if(chartTokenTf!==tf){chart.timeScale().fitContent();const bars=closing?d.closes.length:d.candles.length;if(bars>120)chart.timeScale().setVisibleLogicalRange({from:bars-120,to:bars+3});chartTokenTf=tf;}$('chart-empty').style.display='none';
+  if(chartTokenTf!==tf){chart.timeScale().fitContent();const bars=closing?d.closes.length:live.length;if(bars>120)chart.timeScale().setVisibleLogicalRange({from:bars-120,to:bars+3});chartTokenTf=tf;}$('chart-empty').style.display='none';
   const last=closing?d.closes.at(-1):live.at(-1);$('chart-legend').textContent=(closing||lineOnly)?scale.label+' '+fmt((last.value??last.close)*k)+(valid(last.volume)?'   Vol '+usd(last.volume):''):'O '+fmt(last.open*k)+'   H '+fmt(last.high*k)+'   L '+fmt(last.low*k)+'   C '+fmt(last.close*k)+(valid(last.volume)?'   Vol '+usd(last.volume):'');
   if(scale.unavailable)$('chart-error').textContent='Market cap needs a supply figure this token has not reported; showing price.';
  }else if(!d.errors?.chart||chartTokenTf!==tf){updateSeries(candleSeries,[],true);updateSeries(lineSeries,[],true);updateSeries(volumeSeries,[],true);$('chart-empty').style.display='grid';$('chart-empty').textContent=d.supported?'No candles available for this timeframe.':'Chart integration is not available for this source yet.';$('chart-legend').textContent='No price history';}}
