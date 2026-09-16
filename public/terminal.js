@@ -214,9 +214,9 @@ function paintDetail(d){
  const chartBehind=live.length&&!chartMatchesMarket(live,d.history,t);
  $('chart-live-status').textContent=delayed?'Feed delayed · Showing stored verified data.':'Connected to market feed';
  if(chartBehind){
-  updateSeries(candleSeries,[],true);updateSeries(lineSeries,[],true);updateSeries(volumeSeries,[],true);chartTokenTf=null;
-  $('chart-empty').style.display='grid';$('chart-empty').textContent='Synchronizing primary-pool trade history…';
-  $('chart-legend').textContent='Waiting for matching verified trades';paintTrades(d);return;
+  // A quote/history race must never erase available history. Live trades remain
+  // pool-checked by appendLiveCandles; the independent quote is not a candle.
+  $('chart-live-status').textContent='Historical candles · Catching up with the primary-pool feed.'+(delayed?' Feed delayed.':'');
  }
  if(live.length){const closing=false,lineOnly=viewMode==='line',base=(t.price>0?t.price:live.at(-1)?.close??0)*k,minMove=base>0?Math.pow(10,Math.floor(Math.log10(base))-5):.00000001;
   const axisFmt=scale.label==='Price'?value=>chartPrice(value,minMove):fmt;

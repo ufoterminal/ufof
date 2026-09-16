@@ -5,8 +5,9 @@ No independent Latest / Last known price line is drawn. Candles and line mode us
 the same execution series. MC uses the shared market packet's supply ratio.
 
 The display checks primary-pool identity and closing price against that packet.
-If history has not caught up, the chart shows synchronization instead of a second
-contradictory price. This does not repair missing historical trades or invent OHLC.
+If history has not caught up, the chart retains the historical candles and labels
+the delay. A differing quote must not blank the chart. This does not repair missing
+historical trades or invent OHLC.
 Provider-only close-line fallback is no longer rendered independently.
 
 During an outage stored verified data remains available, with a delayed-feed

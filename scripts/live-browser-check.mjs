@@ -48,6 +48,16 @@ try{
  await page.locator('[data-tf="1m"]').click();
  await page.waitForFunction(()=>window.testCandles.data().at(-1)?.close===12000);
  assert.ok((await page.locator('#token-heading .head-price').textContent()).includes('0.012'));
+ // A legacy snapshot lacking provenance cannot accept live swaps, but must
+ // retain its historical candles rather than blanking the whole chart.
+ await page.route('**/api/market/**',async route=>{
+  const response=await route.fetch(),data=await response.json();data.history={};
+  await route.fulfill({response,json:data});
+ });
+ await page.reload();
+ await page.waitForFunction(()=>document.querySelector('#chart-live-status')?.textContent.includes('Historical candles'));
+ assert.equal(await page.locator('#chart-empty').evaluate(el=>el.style.display),'none');
+ assert.ok(await page.evaluate(()=>window.testCandles.data().length>0));
  assert.deepEqual(errors,[]);
  console.log('PASS: live transactions, stable rows, six-frame candle close and MC marker equality, quiet-SSE valuation retention, zero browser errors');
 }finally{stream.close();await browser?.close();await new Promise(resolve=>server.close(resolve));}

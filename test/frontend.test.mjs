@@ -108,7 +108,9 @@ test('live quotes are separate from execution-derived candle OHLC',()=>{
  assert.ok(!terminal.includes('function withLivePrice('),'quotes cannot rewrite historical OHLC');
  assert.ok(terminal.includes('appendLiveCandles(d.candles,d.history,'),'only provenance-checked trades update candles');
  assert.ok(!terminal.includes('createPriceLine('),'no independent quote marker');
- assert.ok(terminal.includes('chartMatchesMarket(live,d.history,t)'),'a mismatched history cannot render as live');
+ assert.ok(terminal.includes('chartMatchesMarket(live,d.history,t)'),'history lag is explicitly labelled');
+ const guard=terminal.split('if(chartBehind){')[1].split('if(live.length)')[0];
+ assert.ok(!guard.includes('updateSeries(')&&!guard.includes('return;'),'quote divergence never clears available candles');
  assert.ok(terminal.includes('lastValueVisible:true,priceLineVisible:true'),'the series owns its price label');
 });
 
